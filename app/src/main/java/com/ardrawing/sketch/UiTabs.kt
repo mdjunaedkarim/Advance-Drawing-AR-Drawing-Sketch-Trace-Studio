@@ -19,11 +19,11 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.animation.OvershootInterpolator
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -38,7 +38,7 @@ import java.io.File
 
 object UiTabs {
 
-    var selectedCat: Samples.Cat = Samples.Cat.ANIME
+    var selectedCat: Samples.Cat = Samples.Cat.ALL
     val selectedFiles = HashSet<String>()
     private var storeCoinsTab = true
 
@@ -51,11 +51,23 @@ object UiTabs {
     )
 
     fun cuteBtn(act: Activity, label: String, bg1: String, bg2: String, hDp: Int, onClick: () -> Unit) = Button(act).apply {
-        text = label; setTextColor(Color.WHITE); textSize = 15f; isAllCaps = false
-        setTypeface(null, Typeface.BOLD); background = UiTheme.grad(act, bg1, bg2, 18)
-        elevation = UiTheme.dp(act, 4).toFloat()
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, UiTheme.dp(act, hDp)).apply { bottomMargin = UiTheme.dp(act, 12) }
+        text = label
+        textSize = 15f
+        setTypeface(null, Typeface.BOLD)
+        UiTheme.styleGradientBtn(act, this, bg1, bg2, 18)
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, UiTheme.dp(act, hDp)).apply {
+            bottomMargin = UiTheme.dp(act, 12)
+        }
         UiTheme.bounce(this, onClick)
+    }
+
+    private fun clipRounded(v: View, radiusPx: Float) {
+        v.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
+            }
+        }
+        v.clipToOutline = true
     }
 
     fun buildHome(
@@ -70,22 +82,37 @@ object UiTabs {
         onRefresh: () -> Unit
     ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(20)) }
-
-        // Microsoft Bing Live Search Bar + Character Auto-Suggest
-        val searchBoxWrap = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.accent)
-            setPadding(dp(12), dp(4), dp(6), dp(4)); elevation = dp(4).toFloat()
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(24))
         }
+
+        // Studio Search Bar (filters built-in sketches + anime catalog + Bing Web fallback)
+        val searchBoxWrap = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+            setPadding(dp(14), dp(5), dp(6), dp(5))
+            elevation = dp(4).toFloat()
+        }
+        searchBoxWrap.addView(TextView(act).apply {
+            text = "🔎"
+            textSize = 15f
+            setPadding(0, 0, dp(8), 0)
+        })
         val searchInput = EditText(act).apply {
-            hint = "Search any character or drawing (e.g. T, N)..."
-            setTextColor(UiTheme.textMain); setHintTextColor(UiTheme.textSub)
-            textSize = 14f; background = null; setSingleLine(true)
+            hint = L.t("search_hint_all")
+            setTextColor(UiTheme.textMain)
+            setHintTextColor(UiTheme.textSub)
+            textSize = 13.5f
+            background = null
+            setSingleLine(true)
         }
         val goBtn = Button(act).apply {
-            text = "🔍 Bing"; setTextColor(Color.WHITE); textSize = 12f; isAllCaps = false; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.grad(act, "#0EA5E9", "#2563EB", 16)
+            text = "Web"
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleGradientBtn(act, this, "#0EA5E9", "#2563EB", 15)
             UiTheme.bounce(this) {
                 val q = searchInput.text.toString().trim()
                 onBrowseOnline(if (q.isEmpty()) "Anime easy line drawing" else "$q easy line drawing")
@@ -103,74 +130,270 @@ object UiTabs {
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 suggestCol.removeAllViews()
-                val q = s?.toString()?.trim() ?: ""
+                val q = s?.toString()?.trim()?.lowercase() ?: ""
                 if (q.isEmpty()) return
-                val hits = AnimeCatalog.searchAll(q)
+
+                // 1) In-App Built-in Templates Match (instant launch inside app!)
+                val localHits = Samples.items.filter {
+                    it.title.lowercase().contains(q) || it.cat.title.lowercase().contains(q)
+                }.take(5)
+                localHits.forEach { sample ->
+                    val row = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.accent)
+                        setPadding(dp(10), dp(8), dp(12), dp(8))
+                        elevation = dp(2).toFloat()
+                        val thumb = ImageView(act).apply {
+                            setImageBitmap(Samples.renderThumb(sample.id, 120))
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            setBackgroundColor(Color.WHITE)
+                            clipRounded(this, dp(8).toFloat())
+                        }
+                        addView(thumb, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(10) })
+                        val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+                        tc.addView(TextView(act).apply {
+                            text = sample.title
+                            textSize = 14f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                        })
+                        tc.addView(TextView(act).apply {
+                            text = "${sample.cat.title} • Built-in"
+                            textSize = 11f
+                            setTextColor(UiTheme.textSub)
+                        })
+                        addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                        addView(TextView(act).apply {
+                            text = "${L.t("trace_now")} →"
+                            textSize = 11.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 10)
+                            setPadding(dp(10), dp(5), dp(10), dp(5))
+                        })
+                        UiTheme.bounce(this) { onSampleClick(Samples.render(sample.id, 1080)) }
+                    }
+                    suggestCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+                }
+
+                // 2) Anime Catalog Match
+                val hits = AnimeCatalog.searchAll(q).take(6)
                 hits.forEach { (ch, anime) ->
                     val item = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                        background = UiTheme.round(act, UiTheme.surface, 12, UiTheme.stroke)
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.stroke)
                         setPadding(dp(12), dp(10), dp(12), dp(10))
-                        addView(TextView(act).apply { text = "🔍 $ch"; textSize = 14f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) },
-                            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                        addView(TextView(act).apply { text = anime; textSize = 11f; setTextColor(UiTheme.accent) })
+                        addView(TextView(act).apply {
+                            text = "🌐  $ch"
+                            textSize = 14f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                        addView(TextView(act).apply {
+                            text = anime
+                            textSize = 11f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.accent)
+                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                            setPadding(dp(8), dp(3), dp(8), dp(3))
+                        })
                         UiTheme.bounce(this) { onBrowseOnline("$ch $anime easy line drawing") }
                     }
-                    suggestCol.addView(item, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(4) })
+                    suggestCol.addView(item, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(5) })
                 }
             }
         })
 
-        // Drawing Create Card
-        val createCard = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 20); setPadding(dp(16), dp(14), dp(16), dp(14)); elevation = dp(5).toFloat()
-            addView(TextView(act).apply {
-                text = "✏️"; textSize = 20f; gravity = Gravity.CENTER; background = UiTheme.round(act, Color.parseColor("#33FFFFFF"), 14)
-            }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
-            val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-            tc.addView(TextView(act).apply { text = L.t("drawing_create"); textSize = 16f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE) })
-            tc.addView(TextView(act).apply { text = "${L.t("take_photo")} / ${L.t("upload_gallery")}"; textSize = 12f; setTextColor(Color.parseColor("#EDE9FE")) })
-            addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(TextView(act).apply { text = "›"; textSize = 24f; setTextColor(Color.WHITE) })
+        // Studio Hero Card with Embedded Quick Studio Controls
+        val heroCard = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.grad(
+                act,
+                if (UiTheme.isDark) "#3B0764" else "#6D28D9",
+                if (UiTheme.isDark) "#1E1B4B" else "#4338CA",
+                24,
+                Color.parseColor("#33FFFFFF")
+            )
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            elevation = dp(8).toFloat()
         }
-        UiTheme.bounce(createCard, onCreateClick)
-        col.addView(createCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(6); bottomMargin = dp(12) })
+        val heroTopRow = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        heroTopRow.addView(TextView(act).apply {
+            text = "✨  ${L.t("studio_badge")}"
+            textSize = 10.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#1E1B4B"))
+            background = UiTheme.grad(act, "#FDE047", "#F59E0B", 10)
+            setPadding(dp(9), dp(3), dp(9), dp(3))
+        })
+        heroTopRow.addView(View(act), LinearLayout.LayoutParams(0, 1, 1f))
+        heroTopRow.addView(TextView(act).apply {
+            text = "${Samples.items.size} Sketches Ready"
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#EDE9FE"))
+            background = UiTheme.round(act, Color.parseColor("#2AFFFFFF"), 10)
+            setPadding(dp(9), dp(3), dp(9), dp(3))
+        })
+        heroCard.addView(heroTopRow)
 
-        // 3 Quick Cards
-        val quickRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-        fun qCard(emoji: String, label: String, lHex: String, dHex: String, onTap: () -> Unit) = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL; background = UiTheme.round(act, Color.parseColor(if (UiTheme.isDark) dHex else lHex), 18)
-            setPadding(dp(12), dp(12), dp(12), dp(12)); elevation = dp(2).toFloat()
-            addView(TextView(act).apply { text = emoji; textSize = 22f })
-            addView(TextView(act).apply { text = label; textSize = 12f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); maxLines = 1; setPadding(0, dp(6), 0, 0) })
+        heroCard.addView(TextView(act).apply {
+            text = L.t("studio_hero_title")
+            textSize = 21f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(10), 0, dp(4))
+        })
+        heroCard.addView(TextView(act).apply {
+            text = L.t("studio_hero_sub")
+            textSize = 12.5f
+            setTextColor(Color.parseColor("#DDD6FE"))
+            setPadding(0, 0, 0, dp(14))
+        })
+
+        val createHeroBtn = Button(act).apply {
+            text = "✏️  ${L.t("drawing_create")}  →"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleGradientBtn(act, this, "#EC4899", "#DB2777", 16)
+            UiTheme.bounce(this, onCreateClick)
+        }
+        heroCard.addView(createHeroBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)).apply { bottomMargin = dp(10) })
+
+        val quickPillRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        fun heroQuickBtn(label: String, onTap: () -> Unit) = Button(act).apply {
+            text = label
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            maxLines = 1
+            UiTheme.styleSoftBtn(
+                act,
+                this,
+                14,
+                fillColor = Color.parseColor("#26FFFFFF"),
+                strokeColor = Color.parseColor("#33FFFFFF"),
+                textColor = Color.WHITE
+            )
             UiTheme.bounce(this, onTap)
         }
-        quickRow.addView(qCard("📷", L.t("take_photo"), "#E0E7FF", "#1E293B", onCameraClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-        quickRow.addView(qCard("🖼️", L.t("upload_gallery"), "#FEF3C7", "#292524", onGalleryPickClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-        quickRow.addView(qCard("📁", L.t("my_activity"), "#FCE7F3", "#2E1A2B", onMyActivityClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        col.addView(quickRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
+        quickPillRow.addView(heroQuickBtn("📷 ${L.t("take_photo")}", onCameraClick), LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(6) })
+        quickPillRow.addView(heroQuickBtn("🖼️ ${L.t("upload_gallery")}", onGalleryPickClick), LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(6) })
+        quickPillRow.addView(heroQuickBtn("📁 ${L.t("my_activity")}", onMyActivityClick), LinearLayout.LayoutParams(0, dp(42), 1f))
+        heroCard.addView(quickPillRow)
 
-        // Category Chips
+        col.addView(heroCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4); bottomMargin = dp(18) })
+
+        // Categories Header & Chips
         col.addView(TextView(act).apply {
-            text = "Categories"; textSize = 16f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); setPadding(0, 0, 0, dp(10))
+            text = L.t("ready_sketches")
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain)
+            setPadding(0, 0, 0, dp(10))
         })
+
         val catRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
         Samples.Cat.values().forEach { cat ->
             val active = selectedCat == cat
             val chip = TextView(act).apply {
-                text = cat.title; textSize = 13f; setTypeface(null, Typeface.BOLD)
+                text = cat.title
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
                 setTextColor(if (active) Color.WHITE else UiTheme.textMain)
-                background = if (active) UiTheme.grad(act, "#8B5CF6", "#6D28D9", 16) else UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
-                setPadding(dp(14), dp(8), dp(14), dp(8))
+                background = if (active) {
+                    UiTheme.grad(act, "#8B5CF6", "#6D28D9", 16)
+                } else {
+                    UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
+                }
+                setPadding(dp(15), dp(8), dp(15), dp(8))
+                elevation = if (active) dp(3).toFloat() else dp(1).toFloat()
                 UiTheme.bounce(this) { selectedCat = cat; onRefresh() }
             }
             catRow.addView(chip, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
         }
-        col.addView(HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; addView(catRow) },
-            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        col.addView(
+            HorizontalScrollView(act).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(catRow)
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
+        )
 
-        // Offline Assets (if uploaded in assets/anime/naruto/)
+        // In-App Ready-to-Trace Built-in Sketches Grid
+        val builtInList = if (selectedCat == Samples.Cat.ALL) {
+            listOf(0, 1, 14, 22, 27, 30, 35, 43, 46, 48).mapNotNull { id -> Samples.items.find { it.id == id } }
+        } else {
+            Samples.items.filter { it.cat == selectedCat }
+        }
+
+        val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
+        if (builtInList.isNotEmpty()) {
+            var sRow: LinearLayout? = null
+            builtInList.forEachIndexed { idx, item ->
+                if (idx % 2 == 0) {
+                    sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                    col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+                }
+                val thumbBmp = Samples.renderThumb(item.id, 260)
+                val sCard = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+                    setPadding(dp(8), dp(8), dp(8), dp(10))
+                    elevation = dp(4).toFloat()
+
+                    val imgBox = FrameLayout(act).apply {
+                        background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
+                        setPadding(dp(6), dp(6), dp(6), dp(6))
+                        addView(ImageView(act).apply {
+                            setImageBitmap(thumbBmp)
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                        }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                        addView(TextView(act).apply {
+                            text = item.cat.title
+                            textSize = 9.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.accent)
+                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                            setPadding(dp(7), dp(2), dp(7), dp(2))
+                        }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+                    }
+                    addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW - dp(38)))
+
+                    val footRow = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(2), dp(8), dp(2), 0)
+                    }
+                    footRow.addView(TextView(act).apply {
+                        text = item.title
+                        textSize = 13f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(UiTheme.textMain)
+                        maxLines = 1
+                    }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+                    footRow.addView(TextView(act).apply {
+                        text = "${L.t("trace_now")} →"
+                        textSize = 10.5f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(Color.WHITE)
+                        background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 10)
+                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                    })
+                    addView(footRow)
+                    UiTheme.bounce(this) { onSampleClick(Samples.render(item.id, 1080)) }
+                }
+                sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                    if (idx % 2 == 0) marginEnd = dp(12)
+                })
+            }
+        }
+
+        // Offline Assets (if present in assets/)
         val assetFolder = when {
             selectedCat == Samples.Cat.ANIME || selectedCat == Samples.Cat.ALL -> "anime/naruto"
             selectedCat.assetFolder.isNotEmpty() -> selectedCat.assetFolder
@@ -178,7 +401,6 @@ object UiTabs {
         }
         val assetPaths = Samples.listAssetPaths(act, assetFolder)
         if (assetPaths.isNotEmpty()) {
-            val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
             var gridRow: LinearLayout? = null
             assetPaths.forEachIndexed { idx, path ->
                 if (idx % 2 == 0) {
@@ -188,23 +410,37 @@ object UiTabs {
                 val bmp = Samples.loadAssetBitmap(act, path, 480)
                 val title = path.substringAfterLast("/").substringBeforeLast(".")
                 val card = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL; background = UiTheme.round(act, Color.WHITE, 18, UiTheme.stroke)
-                    setPadding(dp(8), dp(8), dp(8), dp(8)); elevation = dp(2).toFloat()
-                    addView(ImageView(act).apply { setImageBitmap(bmp); scaleType = ImageView.ScaleType.FIT_CENTER }, LinearLayout.LayoutParams(MATCH_PARENT, cardW - dp(36)))
-                    addView(TextView(act).apply { text = title; textSize = 12f; setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER; setTextColor(Color.parseColor("#1E1B4B")); maxLines = 1 })
+                    orientation = LinearLayout.VERTICAL
+                    background = UiTheme.round(act, Color.WHITE, 18, UiTheme.stroke)
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                    elevation = dp(3).toFloat()
+                    addView(ImageView(act).apply {
+                        setImageBitmap(bmp)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }, LinearLayout.LayoutParams(MATCH_PARENT, cardW - dp(36)))
+                    addView(TextView(act).apply {
+                        text = title
+                        textSize = 12f
+                        setTypeface(null, Typeface.BOLD)
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.parseColor("#1E1B4B"))
+                        maxLines = 1
+                    })
                     UiTheme.bounce(this) { Samples.loadAssetBitmap(act, path, 1080)?.let(onSampleClick) }
                 }
                 gridRow?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
             }
         }
 
-        // 20 Anime Series Grid (Tap any Anime -> opens all its 20-25 Characters!)
+        // 20 Anime Series Grid
         if (selectedCat == Samples.Cat.ALL || selectedCat == Samples.Cat.ANIME) {
             col.addView(TextView(act).apply {
-                text = "🔥  20 Popular Anime (Tap for Characters)"; textSize = 16f; setTypeface(null, Typeface.BOLD)
-                setTextColor(UiTheme.textMain); setPadding(0, dp(4), 0, dp(10))
+                text = "🔥  20 Popular Anime Worlds"
+                textSize = 17f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(UiTheme.textMain)
+                setPadding(0, dp(8), 0, dp(10))
             })
-            val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
             var aRow: LinearLayout? = null
             AnimeCatalog.list.forEachIndexed { idx, series ->
                 if (idx % 2 == 0) {
@@ -213,26 +449,61 @@ object UiTabs {
                 }
                 val aCard = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
-                    setPadding(dp(12), dp(14), dp(12), dp(14)); elevation = dp(3).toFloat()
-                    addView(TextView(act).apply { text = series.name; textSize = 14f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); maxLines = 1 })
-                    addView(TextView(act).apply { text = "${series.characters.size} Characters ›"; textSize = 12f; setTextColor(UiTheme.accent); setPadding(0, dp(4), 0, 0) })
+                    background = UiTheme.round(act, UiTheme.surface, 18, UiTheme.stroke)
+                    setPadding(dp(12), dp(14), dp(12), dp(14))
+                    elevation = dp(3).toFloat()
+                    addView(TextView(act).apply {
+                        text = series.name
+                        textSize = 14.5f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(UiTheme.textMain)
+                        maxLines = 1
+                    })
+                    addView(TextView(act).apply {
+                        text = "${series.characters.size} Characters  ›"
+                        textSize = 11.5f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(UiTheme.accent)
+                        background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                        setPadding(dp(8), dp(3), dp(8), dp(3))
+                    }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(8) })
                     UiTheme.bounce(this) { onOpenAnime(series) }
                 }
                 aRow?.addView(aCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
             }
         } else {
             val topics = extraTopics[selectedCat] ?: emptyList()
-            topics.forEach { t ->
-                val row = LinearLayout(act).apply {
-                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
-                    setPadding(dp(14), dp(14), dp(14), dp(14)); elevation = dp(2).toFloat()
-                    addView(TextView(act).apply { text = "🔍  $t"; textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                    addView(TextView(act).apply { text = "›"; textSize = 20f; setTextColor(UiTheme.textSub) })
-                    UiTheme.bounce(this) { onBrowseOnline("$t easy line drawing") }
+            if (topics.isNotEmpty()) {
+                col.addView(TextView(act).apply {
+                    text = "🌐  Explore More ${selectedCat.title} Ideas"
+                    textSize = 16f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                    setPadding(0, dp(8), 0, dp(10))
+                })
+                topics.forEach { t ->
+                    val row = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
+                        setPadding(dp(14), dp(13), dp(14), dp(13))
+                        elevation = dp(2).toFloat()
+                        addView(TextView(act).apply {
+                            text = "🔎  $t"
+                            textSize = 14.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                        addView(TextView(act).apply {
+                            text = "Browse ›"
+                            textSize = 12f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.accent)
+                        })
+                        UiTheme.bounce(this) { onBrowseOnline("$t easy line drawing") }
+                    }
+                    col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
                 }
-                col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
             }
         }
         return col
@@ -248,22 +519,32 @@ object UiTabs {
         onRefresh: () -> Unit
     ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(14), dp(14), dp(20)) }
-        val files = (galleryDir.listFiles()?.toList() ?: emptyList()).filter { it.name.endsWith(".png") }.sortedByDescending { it.lastModified() }
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(24))
+        }
+        val files = (galleryDir.listFiles()?.toList() ?: emptyList())
+            .filter { it.name.endsWith(".png") }
+            .sortedByDescending { it.lastModified() }
 
         val topBtns = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
         val impBtn = Button(act).apply {
-            text = "📥  ${L.t("import_photo")}"; setTextColor(Color.WHITE); isAllCaps = false; textSize = 14f; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.grad(act, "#3B82F6", "#2563EB", 16); elevation = dp(3).toFloat(); UiTheme.bounce(this, onImportClick)
+            text = "📥  ${L.t("import_photo")}"
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleGradientBtn(act, this, "#3B82F6", "#2563EB", 16)
+            UiTheme.bounce(this, onImportClick)
         }
         val expBtn = Button(act).apply {
             val cnt = selectedFiles.size
             text = if (cnt > 0) "📤  ${L.t("export_zip")} ($cnt)" else "📤  ${L.t("export_zip")}"
-            setTextColor(Color.WHITE); isAllCaps = false; textSize = 14f; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 16); elevation = dp(3).toFloat()
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleGradientBtn(act, this, "#8B5CF6", "#6D28D9", 16)
             UiTheme.bounce(this) {
                 val chosen = files.filter { selectedFiles.contains(it.name) }
-                if (chosen.isEmpty()) Toast.makeText(act, L.t("select_items"), Toast.LENGTH_SHORT).show() else onExportZip(chosen)
+                if (chosen.isEmpty()) Toast.makeText(act, L.t("select_items"), Toast.LENGTH_SHORT).show()
+                else onExportZip(chosen)
             }
         }
         topBtns.addView(impBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
@@ -271,7 +552,27 @@ object UiTabs {
         col.addView(topBtns, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
 
         if (files.isEmpty()) {
-            col.addView(TextView(act).apply { text = L.t("empty_gallery"); setTextColor(UiTheme.textSub); gravity = Gravity.CENTER; setPadding(0, dp(48), 0, 0) })
+            val emptyCard = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = UiTheme.round(act, UiTheme.surface, 22, UiTheme.stroke)
+                setPadding(dp(24), dp(36), dp(24), dp(32))
+                elevation = dp(3).toFloat()
+                addView(TextView(act).apply {
+                    text = "🎨"
+                    textSize = 36f
+                    gravity = Gravity.CENTER
+                    background = UiTheme.round(act, UiTheme.accentSoft, 34)
+                }, LinearLayout.LayoutParams(dp(68), dp(68)).apply { bottomMargin = dp(14) })
+                addView(TextView(act).apply {
+                    text = L.t("empty_gallery")
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                    gravity = Gravity.CENTER
+                })
+            }
+            col.addView(emptyCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(24) })
             return col
         }
 
@@ -286,27 +587,50 @@ object UiTabs {
             val savedName = prefs.getString("gname_${file.name}", "Art #${files.size - idx}") ?: "Art"
             val isSel = selectedFiles.contains(file.name)
             val card = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL; background = UiTheme.round(act, UiTheme.surface, 18, if (isSel) UiTheme.accent else UiTheme.stroke)
-                setPadding(dp(8), dp(8), dp(8), dp(8)); elevation = dp(3).toFloat()
+                orientation = LinearLayout.VERTICAL
+                background = UiTheme.round(act, UiTheme.surface, 20, if (isSel) UiTheme.accent else UiTheme.stroke, if (isSel) 2 else 1)
+                setPadding(dp(8), dp(8), dp(8), dp(10))
+                elevation = dp(4).toFloat()
+
                 val imgWrap = FrameLayout(act)
-                val iv = ImageView(act).apply { setImageBitmap(bmp); scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(UiTheme.surfaceAlt) }
+                val iv = ImageView(act).apply {
+                    setImageBitmap(bmp)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setBackgroundColor(UiTheme.surfaceAlt)
+                    clipRounded(this, dp(14).toFloat())
+                }
                 UiTheme.bounce(iv) { if (bmp != null) onDraw(bmp) }
                 imgWrap.addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, cardSize - dp(16)))
                 val selBadge = TextView(act).apply {
-                    text = if (isSel) "✓" else ""; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                    text = if (isSel) "✓" else ""
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
                     background = UiTheme.round(act, if (isSel) UiTheme.accent else Color.parseColor("#88000000"), 14, Color.WHITE)
-                    setOnClickListener { if (selectedFiles.contains(file.name)) selectedFiles.remove(file.name) else selectedFiles.add(file.name); onRefresh() }
+                    setOnClickListener {
+                        if (selectedFiles.contains(file.name)) selectedFiles.remove(file.name) else selectedFiles.add(file.name)
+                        onRefresh()
+                    }
                 }
-                imgWrap.addView(selBadge, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
+                imgWrap.addView(selBadge, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(6), dp(6), 0) })
                 addView(imgWrap)
+
                 addView(TextView(act).apply {
-                    text = savedName; setTextColor(UiTheme.textMain); setTypeface(null, Typeface.BOLD); textSize = 13f; maxLines = 1
-                    setPadding(dp(2), dp(8), dp(2), dp(6))
+                    text = savedName
+                    setTextColor(UiTheme.textMain)
+                    setTypeface(null, Typeface.BOLD)
+                    textSize = 13.5f
+                    maxLines = 1
+                    setPadding(dp(2), dp(8), dp(2), dp(8))
                 })
+
                 val br = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-                fun miniBtn(t: String, onTap: () -> Unit) = TextView(act).apply {
-                    text = t; textSize = 12f; gravity = Gravity.CENTER; setTextColor(UiTheme.textMain)
-                    background = UiTheme.round(act, UiTheme.surfaceAlt, 10); setPadding(0, dp(6), 0, dp(6)); UiTheme.bounce(this, onTap)
+                fun miniBtn(t: String, tintBg: Int = UiTheme.surfaceAlt, onTap: () -> Unit) = Button(act).apply {
+                    text = t
+                    textSize = 13f
+                    UiTheme.styleSoftBtn(act, this, 12, fillColor = tintBg, strokeColor = UiTheme.stroke, textColor = UiTheme.textMain)
+                    setPadding(0, 0, 0, 0)
+                    UiTheme.bounce(this, onTap)
                 }
                 br.addView(miniBtn("✏️") {
                     val inp = EditText(act).apply { setText(savedName); hint = L.t("rename_hint") }
@@ -315,24 +639,26 @@ object UiTabs {
                             val nn = inp.text.toString().trim()
                             if (nn.isNotEmpty()) { prefs.edit().putString("gname_${file.name}", nn).apply(); onRefresh() }
                         }.setNegativeButton(L.t("cancel"), null).show()
-                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+                }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(5) })
                 br.addView(miniBtn("🔗") {
                     try {
                         val u = FileProvider.getUriForFile(act, "${act.packageName}.fileprovider", file)
                         act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                            type = "image/png"; putExtra(Intent.EXTRA_STREAM, u); putExtra(Intent.EXTRA_TEXT, "$savedName — ${L.t("share_text")}")
+                            type = "image/png"
+                            putExtra(Intent.EXTRA_STREAM, u)
+                            putExtra(Intent.EXTRA_TEXT, "$savedName — ${L.t("share_text")}")
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }, L.t("share")))
                     } catch (_: Exception) {}
-                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-                br.addView(miniBtn("🗑️") {
+                }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(5) })
+                br.addView(miniBtn("🗑️", Color.parseColor(if (UiTheme.isDark) "#2E1A2B" else "#FFF1F2")) {
                     showCuteDeletePopup(act, savedName, bmp) {
                         file.delete()
                         selectedFiles.remove(file.name)
                         prefs.edit().remove("gname_${file.name}").apply()
                         onRefresh()
                     }
-                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                }, LinearLayout.LayoutParams(0, dp(38), 1f))
                 addView(br)
             }
             row?.addView(card, LinearLayout.LayoutParams(cardSize, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
@@ -358,7 +684,7 @@ object UiTabs {
         val heroCard = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.grad(act, if (UiTheme.isDark) "#312E81" else "#6D28D9", if (UiTheme.isDark) "#4C1D95" else "#4F46E5", 22)
+            background = UiTheme.grad(act, if (UiTheme.isDark) "#312E81" else "#6D28D9", if (UiTheme.isDark) "#4C1D95" else "#4F46E5", 22, Color.parseColor("#33FFFFFF"))
             setPadding(dp(18), dp(16), dp(18), dp(16))
             elevation = dp(6).toFloat()
         }
@@ -407,14 +733,14 @@ object UiTabs {
         }
         val coinsTab = TextView(act).apply {
             text = "🪙  ${L.t("tab_coins")}"
-            textSize = 13f
+            textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(0, dp(10), 0, dp(10))
         }
         val adFreeTab = TextView(act).apply {
             text = "🛡️  ${L.t("tab_adfree")}"
-            textSize = 13f
+            textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(0, dp(10), 0, dp(10))
@@ -513,19 +839,15 @@ object UiTabs {
                         })
                         addView(Button(act).apply {
                             text = pack.priceLabel
-                            setTextColor(Color.WHITE)
                             textSize = 14f
-                            isAllCaps = false
                             setTypeface(null, Typeface.BOLD)
-                            background = UiTheme.grad(act, "#10B981", "#059669", 14)
-                            elevation = dp(2).toFloat()
+                            UiTheme.styleGradientBtn(act, this, "#10B981", "#059669", 14)
                             UiTheme.bounce(this) { billingAds.purchase(act, pack) }
-                        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)))
+                        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(42)))
                     }
                     row?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
                 }
             } else {
-                // Timed Coin-based Ad-Free Section
                 content.addView(TextView(act).apply {
                     text = "⏳  ${L.t("timed_adfree_title")}"
                     textSize = 16f
@@ -595,26 +917,15 @@ object UiTabs {
                     val actionBtn = Button(act).apply {
                         text = if (isPerm) "✓" else "🪙 ${pass.coinsCost}"
                         textSize = 13f
-                        isAllCaps = false
                         setTypeface(null, Typeface.BOLD)
-                        setTextColor(
-                            when {
-                                isPerm -> UiTheme.textSub
-                                canAfford -> Color.WHITE
-                                else -> UiTheme.accent
-                            }
-                        )
-                        background = when {
-                            isPerm -> UiTheme.round(act, UiTheme.surfaceAlt, 14)
-                            canAfford -> UiTheme.grad(act, "#8B5CF6", "#6D28D9", 14)
-                            else -> UiTheme.round(act, UiTheme.surfaceAlt, 14, UiTheme.accent)
+                        when {
+                            isPerm -> UiTheme.styleSoftBtn(act, this, 14, UiTheme.surfaceAlt, UiTheme.stroke, UiTheme.textSub)
+                            canAfford -> UiTheme.styleGradientBtn(act, this, "#8B5CF6", "#6D28D9", 14)
+                            else -> UiTheme.styleSoftBtn(act, this, 14, UiTheme.surfaceAlt, UiTheme.accent, UiTheme.accent)
                         }
-                        setPadding(dp(12), 0, dp(12), 0)
-                        UiTheme.bounce(this) {
-                            billingAds.redeemAdFreeWithCoins(pass)
-                        }
+                        UiTheme.bounce(this) { billingAds.redeemAdFreeWithCoins(pass) }
                     }
-                    passCard.addView(actionBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(40)))
+                    passCard.addView(actionBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(42)))
                     content.addView(passCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
                 }
 
@@ -624,7 +935,7 @@ object UiTabs {
                 val vipCard = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
-                    background = UiTheme.grad(act, "#4C1D95", "#7C3AED", 22)
+                    background = UiTheme.grad(act, "#4C1D95", "#7C3AED", 22, Color.parseColor("#44FFFFFF"))
                     setPadding(dp(20), dp(20), dp(20), dp(20))
                     elevation = dp(6).toFloat()
 
@@ -653,16 +964,13 @@ object UiTabs {
                     })
                     addView(Button(act).apply {
                         text = if (permDone) L.t("ads_removed") else "👑  ${adPack.priceLabel} — ${L.t("unlock_forever")}"
-                        setTextColor(if (permDone) Color.WHITE else Color.parseColor("#1E1B4B"))
                         textSize = 15f
-                        isAllCaps = false
                         setTypeface(null, Typeface.BOLD)
-                        background = if (permDone) {
-                            UiTheme.round(act, Color.parseColor("#10B981"), 16)
+                        if (permDone) {
+                            UiTheme.styleGradientBtn(act, this, "#10B981", "#059669", 16)
                         } else {
-                            UiTheme.grad(act, "#FDE047", "#F59E0B", 16)
+                            UiTheme.styleGradientBtn(act, this, "#FDE047", "#F59E0B", 16, textColor = Color.parseColor("#1E1B4B"))
                         }
-                        elevation = dp(3).toFloat()
                         UiTheme.bounce(this) { if (!permDone) billingAds.purchase(act, adPack) }
                     }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
                 }
@@ -675,49 +983,106 @@ object UiTabs {
         return rootCol
     }
 
-    fun buildSettings(act: Activity, prefs: SharedPreferences, onOpenLanguagePage: () -> Unit, onRefresh: () -> Unit): View {
+    fun buildSettings(
+        act: Activity,
+        prefs: SharedPreferences,
+        onOpenLanguagePage: () -> Unit,
+        onOpenPrivacyPage: () -> Unit,
+        onRefresh: () -> Unit
+    ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
-        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(24)) }
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(24))
+        }
         val themeCard = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.round(act, UiTheme.surface, 18, UiTheme.stroke); setPadding(dp(16), dp(12), dp(16), dp(12)); elevation = dp(2).toFloat()
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            elevation = dp(3).toFloat()
             addView(TextView(act).apply {
-                text = if (UiTheme.isDark) "🌙  Dark Mode (Black)" else "☀️  Light Mode (White)"
-                textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain)
+                text = if (UiTheme.isDark) "🌙" else "☀️"
+                textSize = 18f
+                gravity = Gravity.CENTER
+                background = UiTheme.round(act, UiTheme.accentSoft, 14)
+            }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) })
+            addView(TextView(act).apply {
+                text = if (UiTheme.isDark) "Dark Studio Mode" else "Light Studio Mode"
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(UiTheme.textMain)
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(Switch(act).apply {
                 isChecked = UiTheme.isDark
-                setOnCheckedChangeListener { _, checked -> UiTheme.isDark = checked; prefs.edit().putBoolean("dark_mode", checked).apply(); onRefresh() }
+                setOnCheckedChangeListener { _, checked ->
+                    UiTheme.isDark = checked
+                    prefs.edit().putBoolean("dark_mode", checked).apply()
+                    onRefresh()
+                }
             })
         }
         col.addView(themeCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
-        fun addSetting(title: String, onTap: () -> Unit) {
+        fun addSetting(icon: String, title: String, onTap: () -> Unit) {
             val row = LinearLayout(act).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke); setPadding(dp(16), dp(15), dp(16), dp(15)); elevation = dp(2).toFloat()
-                addView(TextView(act).apply { text = title; textSize = 15f; setTextColor(UiTheme.textMain) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                addView(TextView(act).apply { text = "›"; textSize = 20f; setTextColor(UiTheme.textSub) })
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = UiTheme.round(act, UiTheme.surface, 18, UiTheme.stroke)
+                setPadding(dp(14), dp(12), dp(16), dp(12))
+                elevation = dp(2).toFloat()
+                addView(TextView(act).apply {
+                    text = icon
+                    textSize = 17f
+                    gravity = Gravity.CENTER
+                    background = UiTheme.round(act, UiTheme.surfaceAlt, 12)
+                }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) })
+                addView(TextView(act).apply {
+                    text = title
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(TextView(act).apply {
+                    text = "›"
+                    textSize = 22f
+                    setTextColor(UiTheme.textSub)
+                })
                 UiTheme.bounce(this, onTap)
             }
             col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
         }
 
         val cur = L.languages.find { it.code == L.lang }?.let { "${it.label} (${it.sub})" } ?: "English"
-        addSetting("🌐  ${L.t("language")}: $cur", onOpenLanguagePage)
-        addSetting("🔒  ${L.t("privacy_policy")}") {
-            try { act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(L.PRIVACY_URL))) } catch (_: Exception) {}
+        addSetting("🌐", "${L.t("language")}: $cur", onOpenLanguagePage)
+        addSetting("🔒", L.t("privacy_policy")) {
+            if (L.PRIVACY_URL.startsWith("http")) {
+                try {
+                    act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(L.PRIVACY_URL)))
+                } catch (_: Exception) {
+                    onOpenPrivacyPage()
+                }
+            } else {
+                onOpenPrivacyPage()
+            }
         }
-        addSetting("ℹ️  ${L.t("about")}") { openPlayStore(act) }
-        addSetting("📤  ${L.t("share_friend")}") {
+        addSetting("ℹ️", L.t("about")) { openPlayStore(act) }
+        addSetting("📤", L.t("share_friend")) {
             val url = "https://play.google.com/store/apps/details?id=${act.packageName}"
             (act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Link", url))
             Toast.makeText(act, L.t("link_copied"), Toast.LENGTH_SHORT).show()
-            act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, L.t("share_text")) }, L.t("share_friend")))
+            act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, L.t("share_text"))
+            }, L.t("share_friend")))
         }
-        addSetting("⭐  ${L.t("rate_us")}") { openPlayStore(act) }
-        addSetting("✉️  ${L.t("feedback")}") {
-            try { act.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply { putExtra(Intent.EXTRA_SUBJECT, "Advance Drawing Studio Feedback") }) } catch (_: Exception) {}
+        addSetting("⭐", L.t("rate_us")) { openPlayStore(act) }
+        addSetting("✉️", L.t("feedback")) {
+            try {
+                act.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+                    putExtra(Intent.EXTRA_SUBJECT, "Advance Drawing Studio Feedback")
+                })
+            } catch (_: Exception) {}
         }
         return col
     }
@@ -750,12 +1115,7 @@ object UiTabs {
             val thumbIv = ImageView(act).apply {
                 setImageBitmap(bmp)
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                outlineProvider = object : ViewOutlineProvider() {
-                    override fun getOutline(v: View, o: Outline) {
-                        o.setRoundRect(0, 0, v.width, v.height, dp(18).toFloat())
-                    }
-                }
-                clipToOutline = true
+                clipRounded(this, dp(18).toFloat())
             }
             thumbWrap.addView(thumbIv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             iconBox.addView(thumbWrap, FrameLayout.LayoutParams(dp(78), dp(78), Gravity.CENTER))
@@ -764,11 +1124,7 @@ object UiTabs {
                 text = "🎨"
                 textSize = 32f
                 gravity = Gravity.CENTER
-                background = UiTheme.round(
-                    act,
-                    Color.parseColor(if (UiTheme.isDark) "#2E1A2B" else "#FFE4E6"),
-                    36
-                )
+                background = UiTheme.round(act, Color.parseColor(if (UiTheme.isDark) "#2E1A2B" else "#FFE4E6"), 36)
             }
             iconBox.addView(softCircle, FrameLayout.LayoutParams(dp(74), dp(74), Gravity.CENTER))
         }
@@ -803,20 +1159,15 @@ object UiTabs {
         val cancelBtn = Button(act).apply {
             text = L.t("cancel")
             textSize = 14f
-            isAllCaps = false
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.textMain)
-            background = UiTheme.round(act, UiTheme.surfaceAlt, 16, UiTheme.stroke)
+            UiTheme.styleSoftBtn(act, this, 16)
             UiTheme.bounce(this) { dialog.dismiss() }
         }
         val deleteBtn = Button(act).apply {
             text = "🗑️  ${L.t("delete")}"
             textSize = 14f
-            isAllCaps = false
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            background = UiTheme.grad(act, "#FB7185", "#E11D48", 16)
-            elevation = dp(3).toFloat()
+            UiTheme.styleGradientBtn(act, this, "#FB7185", "#E11D48", 16)
             UiTheme.bounce(this) {
                 dialog.dismiss()
                 onConfirm()
@@ -851,7 +1202,10 @@ object UiTabs {
     }
 
     private fun openPlayStore(act: Activity) {
-        try { act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${act.packageName}"))) }
-        catch (_: Exception) { act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${act.packageName}"))) }
+        try {
+            act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${act.packageName}")))
+        } catch (_: Exception) {
+            act.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${act.packageName}")))
+        }
     }
 }

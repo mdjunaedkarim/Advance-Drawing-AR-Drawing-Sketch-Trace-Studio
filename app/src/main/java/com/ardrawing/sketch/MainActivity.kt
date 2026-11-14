@@ -76,7 +76,7 @@ import java.util.zip.ZipOutputStream
 class MainActivity : ComponentActivity() {
 
     private enum class Tab { HOME, GALLERY, STORE, SETTINGS }
-    private enum class Flow { SPLASH, MAIN, LANG, ANIME_CHARS, BROWSER, EDITOR, CAMERA, CONGRATS }
+    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, BROWSER, EDITOR, CAMERA, CONGRATS }
 
     private var flow = Flow.SPLASH
     private var currentTab = Tab.HOME
@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity() {
                         if (wv != null && wv.canGoBack()) wv.goBack()
                         else { destroyWebView(); showFlow(Flow.MAIN) }
                     }
-                    Flow.ANIME_CHARS, Flow.LANG, Flow.EDITOR, Flow.CONGRATS -> showFlow(Flow.MAIN)
+                    Flow.ANIME_CHARS, Flow.LANG, Flow.PRIVACY, Flow.EDITOR, Flow.CONGRATS -> showFlow(Flow.MAIN)
                     Flow.MAIN -> if (currentTab != Tab.HOME) { currentTab = Tab.HOME; renderMain() } else finish()
                 }
             }
@@ -236,6 +236,7 @@ class MainActivity : ComponentActivity() {
         when (target) {
             Flow.MAIN -> renderMain()
             Flow.LANG -> renderLanguagePage()
+            Flow.PRIVACY -> renderPrivacyPage()
             Flow.ANIME_CHARS -> renderAnimeCharsPage()
             Flow.BROWSER -> renderBrowser()
             Flow.EDITOR -> renderEditor()
@@ -250,19 +251,21 @@ class MainActivity : ComponentActivity() {
         val mainCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(UiTheme.surface); setPadding(dp(16), dp(34), dp(16), dp(12)); elevation = dp(2).toFloat()
+            setBackgroundColor(UiTheme.surface); setPadding(dp(16), dp(34), dp(16), dp(12)); elevation = dp(3).toFloat()
         }
         topBar.addView(TextView(this).apply {
             text = when (currentTab) {
                 Tab.HOME -> "Advance Drawing Studio"; Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
             }
-            textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(if (currentTab == Tab.HOME) UiTheme.accent else UiTheme.textMain)
+            textSize = 19f; setTypeface(null, Typeface.BOLD); setTextColor(if (currentTab == Tab.HOME) UiTheme.accent else UiTheme.textMain)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         topBar.addView(Button(this).apply {
-            text = "🪙 ${billingAds.coins}"; setTextColor(UiTheme.accent); textSize = 14f; isAllCaps = false; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 20, UiTheme.stroke); setPadding(dp(14), 0, dp(14), 0)
+            text = "🪙 ${billingAds.coins}"
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 18, UiTheme.accentSoft, UiTheme.accent, UiTheme.accent)
             UiTheme.bounce(this) { currentTab = Tab.STORE; renderMain() }
-        }, LinearLayout.LayoutParams(WRAP_CONTENT, dp(36)))
+        }, LinearLayout.LayoutParams(WRAP_CONTENT, dp(38)))
         mainCol.addView(topBar)
 
         val body = when (currentTab) {
@@ -279,7 +282,7 @@ class MainActivity : ComponentActivity() {
             )
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { showCuteImportPopup() }, { exportZipFiles(it) }, { openEditorWithBitmap(it) }, { renderMain() })
             Tab.STORE -> UiTabs.buildStore(this, billingAds)
-            Tab.SETTINGS -> UiTabs.buildSettings(this, prefs, { showFlow(Flow.LANG) }) { renderMain() }
+            Tab.SETTINGS -> UiTabs.buildSettings(this, prefs, { showFlow(Flow.LANG) }, { showFlow(Flow.PRIVACY) }) { renderMain() }
         }
         mainCol.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
@@ -290,7 +293,10 @@ class MainActivity : ComponentActivity() {
         }
 
         val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; setBackgroundColor(UiTheme.surface); setPadding(dp(8), dp(8), dp(8), dp(14)); elevation = dp(8).toFloat()
+            orientation = LinearLayout.HORIZONTAL
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 0, UiTheme.stroke, 1)
+            setPadding(dp(10), dp(8), dp(10), dp(14))
+            elevation = dp(10).toFloat()
         }
         listOf(
             Triple(Tab.HOME, "🏠", L.t("home")), Triple(Tab.GALLERY, "📁", L.t("my_gallery")),
@@ -298,15 +304,19 @@ class MainActivity : ComponentActivity() {
         ).forEach { (tab, icon, label) ->
             val sel = currentTab == tab
             nav.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(2), dp(6), dp(2), dp(6))
-                background = if (sel) UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14) else null
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(4), dp(7), dp(4), dp(7))
+                background = if (sel) UiTheme.grad(this@MainActivity, "#8B5CF6", "#6D28D9", 16) else null
+                elevation = if (sel) dp(3).toFloat() else 0f
                 addView(TextView(this@MainActivity).apply { text = icon; textSize = 18f; gravity = Gravity.CENTER })
                 addView(TextView(this@MainActivity).apply {
                     text = label; textSize = 11f; gravity = Gravity.CENTER; maxLines = 1
-                    setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL); setTextColor(if (sel) UiTheme.accent else UiTheme.textSub)
+                    setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
+                    setTextColor(if (sel) Color.WHITE else UiTheme.textSub)
                 })
                 UiTheme.bounce(this) { currentTab = tab; renderMain() }
-            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply {
+                marginStart = dp(2); marginEnd = dp(2)
+            })
         }
         mainCol.addView(nav)
         root.addView(mainCol, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -319,7 +329,10 @@ class MainActivity : ComponentActivity() {
 
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
         topRow.addView(Button(this).apply {
-            text = "←"; setTextColor(UiTheme.textMain); background = UiTheme.round(this@MainActivity, UiTheme.surface, 14, UiTheme.stroke)
+            text = "←"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 14, UiTheme.surface, UiTheme.stroke, UiTheme.textMain)
             UiTheme.bounce(this) { showFlow(Flow.MAIN) }
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
         topRow.addView(TextView(this).apply {
@@ -510,9 +523,12 @@ class MainActivity : ComponentActivity() {
         row.addView(optBtn("🖼️", L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         card.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
         card.addView(Button(this).apply {
-            text = L.t("cancel"); setTextColor(UiTheme.textSub); isAllCaps = false; background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14)
+            text = L.t("cancel")
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 15, UiTheme.surfaceAlt, UiTheme.stroke, UiTheme.textSub)
             UiTheme.bounce(this) { root.removeView(backdrop) }
-        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(46)))
         backdrop.setOnClickListener { root.removeView(backdrop) }; card.setOnClickListener { }
         backdrop.addView(card, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER).apply { setMargins(dp(24), 0, dp(24), 0) })
         root.addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -521,7 +537,7 @@ class MainActivity : ComponentActivity() {
     private fun showCuteImportPopup() {
         val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#88000000")) }
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; background = UiTheme.round(this@MainActivity, UiTheme.surface, 26)
+            orientation = LinearLayout.VERTICAL; background = UiTheme.round(this@MainActivity, UiTheme.surface, 26, UiTheme.stroke)
             setPadding(dp(20), dp(20), dp(20), dp(20)); elevation = dp(12).toFloat()
         }
         card.addView(TextView(this).apply {
@@ -531,9 +547,12 @@ class MainActivity : ComponentActivity() {
         card.addView(UiTabs.cuteBtn(this, "📁  ${L.t("choose_file")}", "#3B82F6", "#2563EB", 52) { root.removeView(backdrop); pickAnyFileLauncher.launch("*/*") })
         card.addView(UiTabs.cuteBtn(this, "🔗  ${L.t("paste_link")}", "#8B5CF6", "#6D28D9", 52) { root.removeView(backdrop); showLinkInputDialog() })
         card.addView(Button(this).apply {
-            text = L.t("cancel"); setTextColor(UiTheme.textSub); isAllCaps = false; background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14)
+            text = L.t("cancel")
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 15, UiTheme.surfaceAlt, UiTheme.stroke, UiTheme.textSub)
             UiTheme.bounce(this) { root.removeView(backdrop) }
-        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(46)))
         backdrop.setOnClickListener { root.removeView(backdrop) }; card.setOnClickListener { }
         backdrop.addView(card, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER).apply { setMargins(dp(24), 0, dp(24), 0) })
         root.addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -621,7 +640,10 @@ class MainActivity : ComponentActivity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(36), dp(16), dp(24)) }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(16)) }
         topRow.addView(Button(this).apply {
-            text = "←"; setTextColor(UiTheme.textMain); background = UiTheme.round(this@MainActivity, UiTheme.surface, 14, UiTheme.stroke)
+            text = "←"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 14, UiTheme.surface, UiTheme.stroke, UiTheme.textMain)
             UiTheme.bounce(this) { showFlow(Flow.MAIN) }
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
         topRow.addView(TextView(this).apply { text = L.t("language"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
@@ -643,6 +665,15 @@ class MainActivity : ComponentActivity() {
             col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
         }
         root.addView(ScrollView(this).apply { addView(col) }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+    }
+
+    private fun renderPrivacyPage() {
+        root.removeAllViews()
+        root.setBackgroundColor(UiTheme.bg)
+        root.addView(
+            PrivacyPolicyContent.buildView(this) { showFlow(Flow.MAIN) },
+            FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        )
     }
 
     private fun openCamCapture() {
@@ -682,24 +713,45 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("ClickableViewAccessibility")
     private fun renderEditor() {
         root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(36), dp(18), dp(24)) }
-        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(34), dp(16), dp(24)) }
+
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
         topRow.addView(Button(this).apply {
-            text = "←"; setTextColor(UiTheme.textMain); background = UiTheme.round(this@MainActivity, UiTheme.surface, 14, UiTheme.stroke)
+            text = "←"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 14, UiTheme.surface, UiTheme.stroke, UiTheme.textMain)
             UiTheme.bounce(this) { showFlow(Flow.MAIN) }
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
-        topRow.addView(TextView(this).apply { text = L.t("drawing_create"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
+        topRow.addView(TextView(this).apply {
+            text = L.t("drawing_create")
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain)
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        val sizeBadgeTv = TextView(this).apply {
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.accent)
+            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 12, UiTheme.stroke)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        }
+        topRow.addView(sizeBadgeTv)
         col.addView(topRow)
 
         val previewFrame = FrameLayout(this).apply {
-            background = UiTheme.round(this@MainActivity, UiTheme.surface, 20, UiTheme.stroke)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 22, UiTheme.stroke)
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            elevation = dp(3).toFloat()
+            elevation = dp(4).toFloat()
         }
         val checkerBox = FrameLayout(this).apply {
             background = createCheckerDrawable()
             outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(14).toFloat()) }
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(16).toFloat()) }
             }
             clipToOutline = true
         }
@@ -707,26 +759,27 @@ class MainActivity : ComponentActivity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         val pickerRing = View(this).apply {
-            background = UiTheme.round(this@MainActivity, Color.TRANSPARENT, 14, Color.parseColor("#EF4444"))
+            background = UiTheme.round(this@MainActivity, Color.TRANSPARENT, 14, Color.parseColor("#EF4444"), 2)
             visibility = View.GONE
         }
         checkerBox.addView(previewIv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         checkerBox.addView(pickerRing, FrameLayout.LayoutParams(dp(24), dp(24)))
         previewFrame.addView(checkerBox, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        col.addView(previewFrame, LinearLayout.LayoutParams(MATCH_PARENT, dp(270)).apply { bottomMargin = dp(12) })
+        col.addView(previewFrame, LinearLayout.LayoutParams(MATCH_PARENT, dp(264)).apply { bottomMargin = dp(14) })
 
         fun activeEditBitmap(): Bitmap? = if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap
 
-        val autoBgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
-        val keepLinesBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
-        val pickColorBtn = Button(this).apply { isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
-        val undoBtn = Button(this).apply { isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
+        val autoBgBtn = Button(this).apply { textSize = 13f; setTypeface(null, Typeface.BOLD) }
+        val keepLinesBtn = Button(this).apply { textSize = 13f; setTypeface(null, Typeface.BOLD) }
+        val cropBtn = Button(this).apply { textSize = 13f; setTypeface(null, Typeface.BOLD) }
+        val pickColorBtn = Button(this).apply { textSize = 13f; setTypeface(null, Typeface.BOLD) }
+        val undoBtn = Button(this).apply { textSize = 13f; setTypeface(null, Typeface.BOLD) }
 
         val pickPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.accent)
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            elevation = dp(3).toFloat()
+            elevation = dp(4).toFloat()
         }
         val pickInfoRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val colorSwatch = TextView(this).apply {
@@ -756,42 +809,50 @@ class MainActivity : ComponentActivity() {
         val pickActionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val removePickedBtn = Button(this).apply {
             text = "🧹  ${L.t("remove_picked_color")}"
-            setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.grad(this@MainActivity, "#EF4444", "#DC2626", 14)
+            textSize = 13f; setTypeface(null, Typeface.BOLD)
+            UiTheme.styleGradientBtn(this@MainActivity, this, "#EF4444", "#DC2626", 14)
         }
         val donePickBtn = Button(this).apply {
             text = L.t("pick_done")
-            setTextColor(UiTheme.textMain); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD)
-            background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14, UiTheme.stroke)
+            textSize = 13f; setTypeface(null, Typeface.BOLD)
+            UiTheme.styleSoftBtn(this@MainActivity, this, 14, UiTheme.surfaceAlt, UiTheme.stroke, UiTheme.textMain)
         }
-        pickActionRow.addView(removePickedBtn, LinearLayout.LayoutParams(0, dp(42), 2f).apply { marginEnd = dp(8) })
-        pickActionRow.addView(donePickBtn, LinearLayout.LayoutParams(0, dp(42), 1f))
+        pickActionRow.addView(removePickedBtn, LinearLayout.LayoutParams(0, dp(44), 2f).apply { marginEnd = dp(8) })
+        pickActionRow.addView(donePickBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
         pickPanel.addView(pickActionRow)
 
         fun sync() {
-            previewIv.setImageBitmap(activeEditBitmap())
+            val active = activeEditBitmap()
+            previewIv.setImageBitmap(active)
             previewIv.alpha = opacityPercent / 100f
+            if (active != null) {
+                sizeBadgeTv.text = "${active.width} × ${active.height} px"
+                sizeBadgeTv.visibility = View.VISIBLE
+            } else {
+                sizeBadgeTv.visibility = View.GONE
+            }
 
             autoBgBtn.text = if (isProcessingBg) L.t("removing_bg") else "✂️  ${L.t("remove_bg")}"
-            autoBgBtn.background = UiTheme.grad(this, "#3B82F6", "#2563EB", 14)
+            UiTheme.styleGradientBtn(this, autoBgBtn, "#3B82F6", "#2563EB", 15)
 
             keepLinesBtn.text = if (isProcessingBg) L.t("removing_bg") else "🖋️  ${L.t("keep_lines")}"
-            keepLinesBtn.background = UiTheme.grad(this, "#8B5CF6", "#6D28D9", 14)
+            UiTheme.styleGradientBtn(this, keepLinesBtn, "#8B5CF6", "#6D28D9", 15)
+
+            cropBtn.text = "📐  ${L.t("crop_resize")}"
+            UiTheme.styleGradientBtn(this, cropBtn, "#0EA5E9", "#0284C7", 15)
 
             pickColorBtn.text = "🎯  ${L.t("pick_color_btn")}"
-            pickColorBtn.setTextColor(if (isColorPickMode) Color.WHITE else UiTheme.textMain)
-            pickColorBtn.background = if (isColorPickMode) {
-                UiTheme.grad(this, "#EC4899", "#DB2777", 14)
+            if (isColorPickMode) {
+                UiTheme.styleGradientBtn(this, pickColorBtn, "#EC4899", "#DB2777", 15)
             } else {
-                UiTheme.round(this, UiTheme.surface, 14, UiTheme.stroke)
+                UiTheme.styleSoftBtn(this, pickColorBtn, 15, UiTheme.surface, UiTheme.stroke, UiTheme.textMain)
             }
 
             val canRestore = bgRemoved && cutoutBitmap != null
             undoBtn.text = if (editHistory.isNotEmpty()) "↩️  ${L.t("undo_step")}" else "🔄  ${L.t("restore_orig")}"
             undoBtn.isEnabled = canRestore && !isProcessingBg
             undoBtn.alpha = if (undoBtn.isEnabled) 1f else 0.45f
-            undoBtn.setTextColor(UiTheme.textMain)
-            undoBtn.background = UiTheme.round(this, UiTheme.surfaceAlt, 14, UiTheme.stroke)
+            UiTheme.styleSoftBtn(this, undoBtn, 15, UiTheme.surfaceAlt, UiTheme.stroke, UiTheme.textMain)
 
             pickPanel.visibility = if (isColorPickMode) View.VISIBLE else View.GONE
             val pc = pickedColor
@@ -876,6 +937,15 @@ class MainActivity : ComponentActivity() {
             ImageProcessor.extractInkLinesAsync(cur, sensitivity = 58) { res -> runOnUiThread { applyProcessed(res) } }
         }
 
+        UiTheme.bounce(cropBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            isColorPickMode = false
+            CropOverlayDialog.show(this, cur) { cropped ->
+                applyProcessed(cropped)
+            }
+        }
+
         UiTheme.bounce(pickColorBtn) {
             if (isProcessingBg) return@bounce
             isColorPickMode = !isColorPickMode
@@ -920,29 +990,48 @@ class MainActivity : ComponentActivity() {
         sync()
 
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row1.addView(autoBgBtn, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(8) })
-        row1.addView(keepLinesBtn, LinearLayout.LayoutParams(0, dp(46), 1f))
+        row1.addView(autoBgBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        row1.addView(keepLinesBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
         col.addView(row1, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
 
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row2.addView(pickColorBtn, LinearLayout.LayoutParams(0, dp(44), 1.3f).apply { marginEnd = dp(8) })
-        row2.addView(undoBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
-        col.addView(row2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+        row2.addView(cropBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        row2.addView(pickColorBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
+        col.addView(row2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
 
+        col.addView(undoBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)).apply { bottomMargin = dp(10) })
         col.addView(pickPanel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
-        val opLabel = TextView(this).apply { text = "${L.t("opacity")}  $opacityPercent%"; setTextColor(UiTheme.textMain); textSize = 14f }
-        col.addView(opLabel)
-        col.addView(SeekBar(this).apply {
+        val opCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+            setPadding(dp(14), dp(12), dp(14), dp(10))
+            elevation = dp(2).toFloat()
+        }
+        val opHead = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        opHead.addView(TextView(this).apply {
+            text = "💧  ${L.t("opacity")}"
+            setTextColor(UiTheme.textMain); textSize = 14f; setTypeface(null, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        val opPctBadge = TextView(this).apply {
+            text = "$opacityPercent%"
+            textSize = 12f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.accent)
+            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10)
+            setPadding(dp(9), dp(3), dp(9), dp(3))
+        }
+        opHead.addView(opPctBadge)
+        opCard.addView(opHead, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+        opCard.addView(SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 opacityPercent = p.coerceAtLeast(10)
-                opLabel.text = "${L.t("opacity")}  $opacityPercent%"
+                opPctBadge.text = "$opacityPercent%"
                 previewIv.alpha = opacityPercent / 100f
             })
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
+        })
+        col.addView(opCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
-        col.addView(UiTabs.cuteBtn(this, "${L.t("next")}  →", "#10B981", "#059669", 54) {
+        col.addView(UiTabs.cuteBtn(this, "📷  ${L.t("next")}  →", "#10B981", "#059669", 54) {
             if (originalBitmap == null) Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
             else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showFlow(Flow.CAMERA)
             else { openCameraAfterPermission = false; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
@@ -1051,10 +1140,30 @@ class MainActivity : ComponentActivity() {
 
     private fun renderCongrats() {
         root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(28), dp(28), dp(28), dp(28)) }
-        col.addView(TextView(this).apply { text = L.t("congrats"); textSize = 28f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); gravity = Gravity.CENTER })
-        col.addView(TextView(this).apply { text = L.t("good_luck"); textSize = 16f; setTextColor(UiTheme.textSub); gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(28)) })
-        col.addView(UiTabs.cuteBtn(this, L.t("go_home"), "#8B5CF6", "#6D28D9", 54) { showFlow(Flow.MAIN) })
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(28), dp(24), dp(28))
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28, UiTheme.stroke)
+            setPadding(dp(24), dp(32), dp(24), dp(26))
+            elevation = dp(10).toFloat()
+        }
+        card.addView(TextView(this).apply {
+            text = "🏆"
+            textSize = 42f
+            gravity = Gravity.CENTER
+            background = UiTheme.grad(this@MainActivity, "#FDE047", "#F59E0B", 42)
+        }, LinearLayout.LayoutParams(dp(84), dp(84)).apply { bottomMargin = dp(18) })
+        card.addView(TextView(this).apply {
+            text = L.t("congrats"); textSize = 26f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); gravity = Gravity.CENTER
+        })
+        card.addView(TextView(this).apply {
+            text = L.t("good_luck"); textSize = 15f; setTextColor(UiTheme.textSub); gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(24))
+        })
+        card.addView(UiTabs.cuteBtn(this, "🏠  ${L.t("go_home")}", "#8B5CF6", "#6D28D9", 54) { showFlow(Flow.MAIN) })
+        col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(col, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 

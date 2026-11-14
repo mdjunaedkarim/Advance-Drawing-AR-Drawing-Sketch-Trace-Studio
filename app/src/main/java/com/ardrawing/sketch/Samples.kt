@@ -96,6 +96,13 @@ object Samples {
         }
     }
 
+    private val thumbCache = android.util.LruCache<Int, Bitmap>(36)
+
+    fun renderThumb(id: Int, size: Int = 260): Bitmap {
+        thumbCache.get(id)?.let { return it }
+        return render(id, size).also { thumbCache.put(id, it) }
+    }
+
     fun render(id: Int, size: Int): Bitmap {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)

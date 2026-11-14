@@ -3,8 +3,8 @@ package com.ardrawing.sketch
 object L {
     var lang = "en"
 
-    // এখানে পরবর্তীতে আপনার আসল Privacy Policy ওয়েবসাইট লিংক বসাবেন
-    const val PRIVACY_URL = "https://policies.google.com/privacy"
+    // এখানে আপনার ওয়েবসাইটের Privacy Policy লিংকটি বসবে (লিংক দিলে অটো ওয়েবসাইটে নিয়ে যাবে)
+    const val PRIVACY_URL = "https://sites.google.com/view/advance-drawing-studio-/home"
 
     data class LangInfo(val code: String, val label: String, val sub: String)
 
@@ -53,12 +53,22 @@ object L {
         "undo_step" to "Undo",
         "restore_orig" to "Restore Original",
         "removing_bg" to "Processing...",
+        "crop_resize" to "Crop & Resize",
+        "free_crop" to "Free",
+        "reset_crop" to "Reset",
+        "apply_crop" to "Apply Crop",
+        "studio_badge" to "PRO AR STUDIO",
+        "studio_hero_title" to "Trace Any Art on Paper",
+        "studio_hero_sub" to "Pick from 50+ built-in sketches or upload your photo to draw in AR",
+        "ready_sketches" to "Ready-to-Trace Sketches",
+        "trace_now" to "Trace",
+        "search_hint_all" to "Search 50+ sketches, anime or web...",
         "opacity" to "Transparency",
         "brightness" to "Brightness",
         "flash" to "Flash",
         "lock" to "Lock",
         "unlock" to "Unlock",
-        "next" to "Next",
+        "next" to "Start AR Drawing",
         "back" to "Back",
         "cancel" to "Cancel",
         "save" to "Save",
@@ -123,6 +133,9 @@ object L {
         "play_pending" to "Play Store billing activates after publishing on Google Play Console.",
         "language" to "Language",
         "privacy_policy" to "Privacy Policy",
+        "copy_policy" to "Copy Policy",
+        "policy_copied" to "Privacy Policy copied!",
+        "contact_dev" to "Contact Us",
         "about" to "About App",
         "share_friend" to "Share with Friends",
         "rate_us" to "Rate Us",
@@ -151,8 +164,18 @@ object L {
         "remove_picked_color" to "বাছাই করা রঙ মুছুন",
         "pick_done" to "সম্পন্ন", "tolerance" to "সূক্ষ্মতা / রেঞ্জ", "undo_step" to "আগের ধাপ",
         "restore_orig" to "আসল ছবি", "removing_bg" to "প্রসেস হচ্ছে...",
+        "crop_resize" to "ক্রপ ও রিসাইজ",
+        "free_crop" to "ফ্রি সাইজ",
+        "reset_crop" to "রিসেট",
+        "apply_crop" to "ক্রপ সেভ করুন",
+        "studio_badge" to "প্রো এআর স্টুডিও",
+        "studio_hero_title" to "কাগজে সহজেই যেকোনো ছবি আঁকুন",
+        "studio_hero_sub" to "অ্যাপের ভেতরের ৫০+ স্কেচ অথবা নিজের ছবি দিয়ে সরাসরি আঁকা শুরু করুন",
+        "ready_sketches" to "তৈরি স্কেচ সমূহ",
+        "trace_now" to "আঁকুন",
+        "search_hint_all" to "স্কেচ, অ্যানিমে বা যেকোনো ছবি খুঁজুন...",
         "opacity" to "স্বচ্ছতা", "brightness" to "আলো",
-        "next" to "পরবর্তী", "back" to "ফিরুন", "cancel" to "বাতিল", "save" to "সেভ",
+        "next" to "এআর ড্রয়িং শুরু করুন", "back" to "ফিরুন", "cancel" to "বাতিল", "save" to "সেভ",
         "congrats" to "অভিনন্দন! 🎉", "good_luck" to "শুভকামনা! আপনার আঁকা সুন্দর হয়েছে",
         "go_home" to "হোমে যান", "my_activity" to "মাই অ্যাক্টিভিটি",
         "import_photo" to "ইনপুট / Import", "export_zip" to "আউটপুট ZIP",
@@ -189,7 +212,10 @@ object L {
         "permanent_already_active" to "পার্মানেন্ট অ্যাড-ফ্রি ইতিমধ্যেই চালু আছে!",
         "reward_coins_earned" to "🎉 ড্রয়িং শেষ করায় +৫ কয়েন বোনাস পেলেন!",
         "ads_removed" to "পার্মানেন্ট অ্যাড-ফ্রি চালু ✓",
-        "language" to "ভাষা", "privacy_policy" to "প্রাইভেসি পলিসি", "about" to "অ্যাপ সম্পর্কে",
+        "language" to "ভাষা", "privacy_policy" to "প্রাইভেসি পলিসি",
+        "copy_policy" to "কপি করুন",
+        "policy_copied" to "প্রাইভেসি পলিসি কপি হয়েছে!",
+        "contact_dev" to "যোগাযোগ", "about" to "অ্যাপ সম্পর্কে",
         "share_friend" to "শেয়ার করুন", "rate_us" to "রেটিং দিন", "feedback" to "ফিডব্যাক"
     )
 
