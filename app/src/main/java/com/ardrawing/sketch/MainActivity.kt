@@ -7,14 +7,16 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.graphics.Outline
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.GestureDetector
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -65,12 +67,13 @@ class MainActivity : ComponentActivity() {
     private var cutoutBitmap: Bitmap? = null
     private var bgRemoved = false
     private var isProcessingBg = false
-    private var opacityPercent = 70
-    private var brightness = 0
+    private var opacityPercent = 80
+    private var brightnessPercent = 80
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var boundCamera: Camera? = null
     private var torchOn = false
+    private var controlsHidden = false
     private var overlayView: OverlayView? = null
     private var cameraHintView: TextView? = null
     private var pendingCameraUri: Uri? = null
@@ -94,6 +97,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         try { OpenCVLoader.initLocal() } catch (_: Throwable) {}
         L.lang = prefs.getString("lang", "en") ?: "en"
+        UiTheme.isDark = prefs.getBoolean("dark_mode", false)
         analysisExecutor = Executors.newSingleThreadExecutor()
 
         billingAds = BillingAdsManager(
@@ -103,7 +107,7 @@ class MainActivity : ComponentActivity() {
         )
         try { billingAds.init() } catch (_: Throwable) {}
 
-        root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0B0F19")) }
+        root = FrameLayout(this).apply { setBackgroundColor(UiTheme.bg) }
         setContentView(root)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -130,42 +134,52 @@ class MainActivity : ComponentActivity() {
     private fun showSplash() {
         flow = Flow.SPLASH
         root.removeAllViews()
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(32), dp(32), dp(32), dp(32))
+        val wrap = FrameLayout(this).apply {
+            background = UiTheme.grad(this@MainActivity, if (UiTheme.isDark) "#0B0F19" else "#F3E8FF", if (UiTheme.isDark) "#1E1B4B" else "#FFFFFF", 0)
         }
-        val ring = FrameLayout(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL; setStroke(dp(4), Color.parseColor("#4F46E5")); setColor(Color.parseColor("#161D2F"))
-            }
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+        val centerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+        }
+        val logoCard = FrameLayout(this).apply {
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28)
+            elevation = dp(10).toFloat()
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         val logoIv = ImageView(this).apply {
             loadSafeLogo(320)?.let { setImageBitmap(it) } ?: setImageResource(R.drawable.app_logo)
             scaleType = ImageView.ScaleType.CENTER_CROP
             outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(v: View, o: Outline) { o.setOval(0, 0, v.width, v.height) }
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(24).toFloat()) }
             }
             clipToOutline = true
         }
-        ring.addView(logoIv, FrameLayout.LayoutParams(dp(120), dp(120)))
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 1 }
-        val pctTv = TextView(this).apply {
-            text = "${L.t("loading")}... 1%"; textSize = 15f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(10), 0, 0)
-        }
-        col.addView(ring)
-        col.addView(TextView(this).apply {
-            text = L.t("app"); textSize = 24f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE); setPadding(0, dp(18), 0, dp(24))
+        logoCard.addView(logoIv, FrameLayout.LayoutParams(dp(120), dp(120)))
+        centerCol.addView(logoCard)
+        centerCol.addView(TextView(this).apply {
+            text = "Free Art Center"; textSize = 24f; setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain); setPadding(0, dp(16), 0, 0)
         })
-        col.addView(bar, LinearLayout.LayoutParams(dp(220), dp(10)))
-        col.addView(pctTv)
-        root.addView(col, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+
+        val bottomCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(36), 0, dp(36), dp(36))
+        }
+        val pctTv = TextView(this).apply { text = "${L.t("loading")}... 1%"; textSize = 13f; setTextColor(UiTheme.textSub); setPadding(0, 0, 0, dp(8)) }
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 1 }
+        val adsNote = TextView(this).apply { text = "This action may contain Ads"; textSize = 12f; setTextColor(UiTheme.textSub); setPadding(0, dp(10), 0, 0) }
+        bottomCol.addView(pctTv)
+        bottomCol.addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, dp(8)))
+        bottomCol.addView(adsNote)
+
+        wrap.addView(centerCol, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
+        wrap.addView(bottomCol, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
+        root.addView(wrap, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
         var p = 1
         handler.postDelayed(object : Runnable {
             override fun run() {
                 p = (p + 3).coerceAtMost(100)
                 bar.progress = p; pctTv.text = "${L.t("loading")}... $p%"
-                if (p < 100) handler.postDelayed(this, 55) else handler.postDelayed({ showFlow(Flow.MAIN) }, 220)
+                if (p < 100) handler.postDelayed(this, 55) else handler.postDelayed({ showFlow(Flow.MAIN) }, 200)
             }
         }, 60)
     }
@@ -184,26 +198,28 @@ class MainActivity : ComponentActivity() {
 
     private fun renderMain() {
         root.removeAllViews()
+        root.setBackgroundColor(UiTheme.bg)
         val mainCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#121826")); setPadding(dp(16), dp(34), dp(16), dp(12))
+            setBackgroundColor(UiTheme.surface); setPadding(dp(16), dp(34), dp(16), dp(12)); elevation = dp(2).toFloat()
         }
         topBar.addView(TextView(this).apply {
             text = when (currentTab) {
-                Tab.HOME -> L.t("app"); Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
+                Tab.HOME -> "Free Art Center"; Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
             }
-            textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE)
+            textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(if (currentTab == Tab.HOME) UiTheme.accent else UiTheme.textMain)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         topBar.addView(Button(this).apply {
-            text = "🪙 ${billingAds.coins}"; setTextColor(Color.parseColor("#FBBF24")); textSize = 14f; isAllCaps = false
-            background = UiTabs.roundedBg(this@MainActivity, "#1E293B", 16); setPadding(dp(12), 0, dp(12), 0)
-            setOnClickListener { currentTab = Tab.STORE; renderMain() }
+            text = "🪙 ${billingAds.coins}"; setTextColor(UiTheme.accent); textSize = 14f; isAllCaps = false; setTypeface(null, Typeface.BOLD)
+            background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 20, UiTheme.stroke); setPadding(dp(14), 0, dp(14), 0)
+            UiTheme.bounce(this) { currentTab = Tab.STORE; renderMain() }
         }, LinearLayout.LayoutParams(WRAP_CONTENT, dp(36)))
         mainCol.addView(topBar)
 
         val body = when (currentTab) {
-            Tab.HOME -> UiTabs.buildHome(this, { showSourceChooser() }, { openEditorWithBitmap(it) })
+            Tab.HOME -> UiTabs.buildHome(this, { showSourceChooser() }, { openCamCapture() }, { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") }, { currentTab = Tab.GALLERY; renderMain() }, { openEditorWithBitmap(it) })
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { importToGalleryMode = true; pickGalleryLauncher.launch("image/*") }, { openEditorWithBitmap(it) }, { renderMain() })
             Tab.STORE -> UiTabs.buildStore(this, billingAds)
             Tab.SETTINGS -> UiTabs.buildSettings(this, prefs) { renderMain() }
@@ -211,75 +227,81 @@ class MainActivity : ComponentActivity() {
         mainCol.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
         if (!billingAds.adsRemoved) {
-            val adBox = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0B0F19")) }
+            val adBox = FrameLayout(this).apply { setBackgroundColor(UiTheme.bg) }
             billingAds.attachBanner(adBox)
             mainCol.addView(adBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
 
         val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.parseColor("#121826")); setPadding(dp(4), dp(6), dp(4), dp(14))
+            orientation = LinearLayout.HORIZONTAL; setBackgroundColor(UiTheme.surface); setPadding(dp(8), dp(8), dp(8), dp(14)); elevation = dp(8).toFloat()
         }
         listOf(
-            Triple(Tab.HOME, "🏠", L.t("home")), Triple(Tab.GALLERY, "🖼️", L.t("my_gallery")),
+            Triple(Tab.HOME, "🏠", L.t("home")), Triple(Tab.GALLERY, "📁", L.t("my_gallery")),
             Triple(Tab.STORE, "🛒", L.t("store")), Triple(Tab.SETTINGS, "⚙️", L.t("settings"))
         ).forEach { (tab, icon, label) ->
             val sel = currentTab == tab
             nav.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(2), dp(6), dp(2), dp(6))
-                background = if (sel) UiTabs.roundedBg(this@MainActivity, "#1E293B", 12) else null
+                background = if (sel) UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14) else null
                 addView(TextView(this@MainActivity).apply { text = icon; textSize = 18f; gravity = Gravity.CENTER })
                 addView(TextView(this@MainActivity).apply {
                     text = label; textSize = 11f; gravity = Gravity.CENTER; maxLines = 1
-                    setTextColor(if (sel) Color.parseColor("#818CF8") else Color.parseColor("#94A3B8"))
+                    setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
+                    setTextColor(if (sel) UiTheme.accent else UiTheme.textSub)
                 })
-                setOnClickListener { currentTab = tab; renderMain() }
+                UiTheme.bounce(this) { currentTab = tab; renderMain() }
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         }
         mainCol.addView(nav)
         root.addView(mainCol, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
+    private fun openCamCapture() {
+        importToGalleryMode = false
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchTakePhoto()
+        else { openCameraAfterPermission = true; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
+    }
+
     private fun showSourceChooser() {
         AlertDialog.Builder(this).setTitle(L.t("choose_source"))
             .setItems(arrayOf("📷  ${L.t("take_photo")}", "🖼️  ${L.t("upload_gallery")}")) { _, w ->
-                importToGalleryMode = false
-                if (w == 0) {
-                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchTakePhoto()
-                    else { openCameraAfterPermission = true; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
-                } else pickGalleryLauncher.launch("image/*")
+                if (w == 0) openCamCapture() else { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") }
             }.setNegativeButton(L.t("cancel"), null).show()
     }
 
     private fun openEditorWithBitmap(bmp: Bitmap) {
-        originalBitmap = bmp; cutoutBitmap = null; bgRemoved = false; brightness = 0; opacityPercent = 70
+        originalBitmap = bmp; cutoutBitmap = null; bgRemoved = false; brightnessPercent = 80; opacityPercent = 80
         showFlow(Flow.EDITOR)
     }
 
     private fun renderEditor() {
-        root.removeAllViews()
+        root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(36), dp(18), dp(24)) }
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
         topRow.addView(Button(this).apply {
-            text = L.t("back"); setTextColor(Color.WHITE); isAllCaps = false; background = UiTabs.roundedBg(this@MainActivity, "#1E293B", 10)
-            setOnClickListener { showFlow(Flow.MAIN) }
-        }, LinearLayout.LayoutParams(WRAP_CONTENT, dp(40)).apply { marginEnd = dp(12) })
-        topRow.addView(TextView(this).apply { text = L.t("drawing_create"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE) })
+            text = "←"; setTextColor(UiTheme.textMain); background = UiTheme.round(this@MainActivity, UiTheme.surface, 14, UiTheme.stroke)
+            UiTheme.bounce(this) { showFlow(Flow.MAIN) }
+        }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
+        topRow.addView(TextView(this).apply { text = L.t("drawing_create"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
         col.addView(topRow)
 
-        val previewIv = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; background = UiTabs.roundedBg(this@MainActivity, "#161E31", 16); setPadding(dp(8), dp(8), dp(8), dp(8)) }
-        col.addView(previewIv, LinearLayout.LayoutParams(MATCH_PARENT, dp(280)).apply { bottomMargin = dp(16) })
+        val previewIv = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER; background = UiTheme.round(this@MainActivity, UiTheme.surface, 20, UiTheme.stroke)
+            setPadding(dp(10), dp(10), dp(10), dp(10)); elevation = dp(3).toFloat()
+        }
+        col.addView(previewIv, LinearLayout.LayoutParams(MATCH_PARENT, dp(270)).apply { bottomMargin = dp(16) })
 
-        val bgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 15f }
+        val bgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 15f; setTypeface(null, Typeface.BOLD); elevation = dp(3).toFloat() }
         fun sync() {
             previewIv.setImageBitmap(if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap)
             previewIv.alpha = opacityPercent / 100f
             bgBtn.text = when { isProcessingBg -> L.t("removing_bg"); bgRemoved -> "↩️  ${L.t("restore_orig")}"; else -> "✂️  ${L.t("remove_bg")}" }
-            bgBtn.background = UiTabs.roundedBg(this, if (bgRemoved) "#D97706" else "#2563EB", 12)
+            bgBtn.background = UiTheme.grad(this, if (bgRemoved) "#F59E0B" else "#3B82F6", if (bgRemoved) "#D97706" else "#2563EB", 16)
         }
         sync()
-        bgBtn.setOnClickListener {
-            if (isProcessingBg) return@setOnClickListener
-            val orig = originalBitmap ?: return@setOnClickListener
+        UiTheme.bounce(bgBtn) {
+            if (isProcessingBg) return@bounce
+            val orig = originalBitmap ?: return@bounce
             if (bgRemoved) { bgRemoved = false; sync() }
             else if (cutoutBitmap != null) { bgRemoved = true; sync() }
             else {
@@ -287,13 +309,13 @@ class MainActivity : ComponentActivity() {
                 ImageProcessor.removeBackgroundAsync(orig) { res -> runOnUiThread { isProcessingBg = false; cutoutBitmap = res; bgRemoved = true; sync() } }
             }
         }
-        col.addView(bgBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(50)).apply { bottomMargin = dp(14) })
-        col.addView(TextView(this).apply { text = L.t("opacity"); setTextColor(Color.parseColor("#CBD5E1")); textSize = 14f })
+        col.addView(bgBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { bottomMargin = dp(14) })
+        col.addView(TextView(this).apply { text = "${L.t("opacity")}  $opacityPercent%"; setTextColor(UiTheme.textMain); textSize = 14f })
         col.addView(SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p -> opacityPercent = p.coerceAtLeast(10); previewIv.alpha = opacityPercent / 100f })
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(18) })
-        col.addView(UiTabs.actionBtn(this, "${L.t("next")} →", "#10B981", 54) {
+        col.addView(UiTabs.cuteBtn(this, "${L.t("next")}  →", "#10B981", "#059669", 54) {
             if (originalBitmap == null) Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
             else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showFlow(Flow.CAMERA)
             else { openCameraAfterPermission = false; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
@@ -302,69 +324,114 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun renderCamera() {
-        root.removeAllViews(); torchOn = false
-        val baseBmp = (if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap) ?: return
+        root.removeAllViews(); torchOn = false; controlsHidden = false
+        var activeBmp = (if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap) ?: return
         val previewView = PreviewView(this)
-        val overlay = OverlayView(this).apply { setBitmap(ImageProcessor.applyBrightness(baseBmp, brightness), true); setOpacity(opacityPercent) }
+        val overlay = OverlayView(this).apply { setBitmap(activeBmp, true); setOpacity(opacityPercent) }
         overlayView = overlay
+
+        // Top-Left Floating Pill (Close, Flip, Flash, Lock, Done)
+        val topPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 26); elevation = dp(6).toFloat()
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        fun pillIcon(txt: String, onTap: (TextView) -> Unit): TextView = TextView(this).apply {
+            text = txt; textSize = 18f; gravity = Gravity.CENTER; setTextColor(UiTheme.accent)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            UiTheme.bounce(this) { onTap(this) }
+        }
+        topPill.addView(pillIcon("✕") { stopCamera(); showFlow(Flow.EDITOR) })
+        topPill.addView(pillIcon("⇄") {
+            val m = Matrix().apply { postScale(-1f, 1f) }
+            activeBmp = Bitmap.createBitmap(activeBmp, 0, 0, activeBmp.width, activeBmp.height, m, true)
+            overlay.setBitmap(activeBmp, resetPos = false)
+        })
+        topPill.addView(pillIcon("⚡") { tv ->
+            torchOn = !torchOn; boundCamera?.cameraControl?.enableTorch(torchOn)
+            tv.setTextColor(if (torchOn) Color.parseColor("#F59E0B") else UiTheme.accent)
+        })
+        topPill.addView(pillIcon("🔒") { tv ->
+            if (!overlay.isLocked) {
+                tracker.startLock(); overlay.lock(); tv.text = "🔓"
+                tv.setTextColor(Color.parseColor("#10B981")); cameraHintView?.text = L.t("hint_locked")
+            } else {
+                tracker.stopLock(); overlay.unlock(); tv.text = "🔒"
+                tv.setTextColor(UiTheme.accent); cameraHintView?.text = L.t("hint_place")
+            }
+        })
+        topPill.addView(pillIcon("✓") {
+            saveToGallery(activeBmp, "Art"); stopCamera()
+            billingAds.showInterstitial(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
+        })
+
+        // Bottom Floating Transparency & Brightness Card
+        val bottomCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; background = UiTheme.round(this@MainActivity, UiTheme.surface, 22)
+            elevation = dp(8).toFloat(); setPadding(dp(16), dp(14), dp(16), dp(16))
+        }
+        val opTv = TextView(this).apply { text = "💧  ${L.t("opacity")}  $opacityPercent%"; setTextColor(UiTheme.textMain); textSize = 13f; setTypeface(null, Typeface.BOLD) }
+        val brTv = TextView(this).apply { text = "☀️  ${L.t("brightness")}  $brightnessPercent%"; setTextColor(UiTheme.textMain); textSize = 13f; setTypeface(null, Typeface.BOLD); setPadding(0, dp(8), 0, 0) }
+        bottomCard.addView(opTv)
+        bottomCard.addView(SeekBar(this).apply {
+            max = 100; progress = opacityPercent
+            setOnSeekBarChangeListener(simpleSeek { p -> opacityPercent = p.coerceAtLeast(10); opTv.text = "💧  ${L.t("opacity")}  $opacityPercent%"; overlay.setOpacity(opacityPercent) })
+        })
+        bottomCard.addView(brTv)
+        bottomCard.addView(SeekBar(this).apply {
+            max = 100; progress = brightnessPercent
+            setOnSeekBarChangeListener(simpleSeek { p ->
+                brightnessPercent = p.coerceAtLeast(10); brTv.text = "☀️  ${L.t("brightness")}  $brightnessPercent%"
+                window.attributes = window.attributes.apply { screenBrightness = brightnessPercent / 100f }
+            })
+        })
+
+        // Top-Right Hide/Show All UI Circle Button
+        val hideBtn = TextView(this).apply {
+            text = "⛶"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(UiTheme.accent)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 24); elevation = dp(6).toFloat()
+        }
         val hintTv = TextView(this).apply {
-            text = L.t("hint_place"); setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER
-            background = UiTabs.roundedBg(this@MainActivity, "#AA000000", 12); setPadding(dp(12), dp(8), dp(12), dp(8))
+            text = L.t("hint_place"); setTextColor(Color.WHITE); textSize = 12f; gravity = Gravity.CENTER
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#88000000"), 12); setPadding(dp(10), dp(4), dp(10), dp(4))
         }
         cameraHintView = hintTv
 
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(36), dp(12), dp(8))
-            addView(Button(this@MainActivity).apply {
-                text = "←"; setTextColor(Color.WHITE); background = UiTabs.roundedBg(this@MainActivity, "#AA111827", 20)
-                setOnClickListener { stopCamera(); showFlow(Flow.EDITOR) }
-            }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(8) })
-            addView(hintTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        fun setControlsVisible(show: Boolean) {
+            controlsHidden = !show
+            val vis = if (show) View.VISIBLE else View.GONE
+            topPill.visibility = vis; bottomCard.visibility = vis; hintTv.visibility = vis
+            hideBtn.text = if (show) "⛶" else "✕"
         }
+        UiTheme.bounce(hideBtn) { setControlsVisible(controlsHidden) }
 
-        val bp = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = UiTabs.roundedBg(this@MainActivity, "#D90F172A", 18); setPadding(dp(14), dp(10), dp(14), dp(14)) }
-        bp.addView(TextView(this).apply { text = L.t("brightness"); setTextColor(Color.WHITE); textSize = 12f })
-        bp.addView(SeekBar(this).apply {
-            max = 100; progress = brightness + 50
-            setOnSeekBarChangeListener(simpleSeek { p -> brightness = p - 50; overlay.setBitmap(ImageProcessor.applyBrightness(baseBmp, brightness), false) })
-        })
-        bp.addView(TextView(this).apply { text = L.t("opacity"); setTextColor(Color.WHITE); textSize = 12f })
-        bp.addView(SeekBar(this).apply {
-            max = 100; progress = opacityPercent
-            setOnSeekBarChangeListener(simpleSeek { p -> opacityPercent = p.coerceAtLeast(10); overlay.setOpacity(opacityPercent) })
-        })
-
-        val br = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
-        br.addView(Button(this).apply {
-            text = "🔦 ${L.t("flash")}"; setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; background = UiTabs.roundedBg(this@MainActivity, "#334155", 10)
-            setOnClickListener { torchOn = !torchOn; boundCamera?.cameraControl?.enableTorch(torchOn); background = UiTabs.roundedBg(this@MainActivity, if (torchOn) "#F59E0B" else "#334155", 10) }
-        }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) })
-        br.addView(Button(this).apply {
-            text = "🔒 ${L.t("lock")}"; setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; background = UiTabs.roundedBg(this@MainActivity, "#2563EB", 10)
-            setOnClickListener {
-                if (!overlay.isLocked) { tracker.startLock(); overlay.lock(); text = "🔓 ${L.t("unlock")}"; background = UiTabs.roundedBg(this@MainActivity, "#D97706", 10); hintTv.text = L.t("hint_locked") }
-                else { tracker.stopLock(); overlay.unlock(); text = "🔒 ${L.t("lock")}"; background = UiTabs.roundedBg(this@MainActivity, "#2563EB", 10); hintTv.text = L.t("hint_place") }
+        val tapDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (controlsHidden) { setControlsVisible(true); return true }
+                return false
             }
-        }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) })
-        br.addView(Button(this).apply {
-            text = "${L.t("next")} ✓"; setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; background = UiTabs.roundedBg(this@MainActivity, "#10B981", 10)
-            setOnClickListener { saveToGallery(baseBmp, "Drawing"); stopCamera(); billingAds.showInterstitial(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } } }
-        }, LinearLayout.LayoutParams(0, dp(44), 1f))
-        bp.addView(br)
+        })
+        overlay.setOnTouchListener { _, ev -> tapDetector.onTouchEvent(ev); false }
+        previewView.setOnTouchListener { _, ev -> tapDetector.onTouchEvent(ev); true }
+
+        val topBar = FrameLayout(this).apply { setPadding(dp(14), dp(36), dp(14), 0) }
+        topBar.addView(topPill, FrameLayout.LayoutParams(WRAP_CONTENT, dp(48), Gravity.START))
+        topBar.addView(hideBtn, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END))
 
         root.addView(previewView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        root.addView(topRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
-        root.addView(bp, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply { setMargins(dp(12), 0, dp(12), dp(18)) })
+        root.addView(topBar, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
+        root.addView(hintTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(92) })
+        root.addView(bottomCard, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(22)) })
         startCamera(previewView)
     }
 
     private fun renderCongrats() {
-        root.removeAllViews()
+        root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(28), dp(28), dp(28), dp(28)) }
-        col.addView(TextView(this).apply { text = L.t("congrats"); textSize = 28f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER })
-        col.addView(TextView(this).apply { text = L.t("good_luck"); textSize = 16f; setTextColor(Color.parseColor("#CBD5E1")); gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(28)) })
-        col.addView(UiTabs.actionBtn(this, L.t("go_home"), "#4F46E5", 52) { showFlow(Flow.MAIN) })
+        col.addView(TextView(this).apply { text = L.t("congrats"); textSize = 28f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); gravity = Gravity.CENTER })
+        col.addView(TextView(this).apply { text = L.t("good_luck"); textSize = 16f; setTextColor(UiTheme.textSub); gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(28)) })
+        col.addView(UiTabs.cuteBtn(this, L.t("go_home"), "#8B5CF6", "#6D28D9", 54) { showFlow(Flow.MAIN) })
         root.addView(col, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
@@ -389,6 +456,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopCamera() {
         try { boundCamera?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
+        window.attributes = window.attributes.apply { screenBrightness = -1f }
         boundCamera = null; torchOn = false; tracker.stopLock(); cameraProvider?.unbindAll(); overlayView = null; cameraHintView = null
     }
 
@@ -427,7 +495,7 @@ class MainActivity : ComponentActivity() {
         override fun onStopTrackingTouch(sb: SeekBar?) {}
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int): Int = UiTheme.dp(this, v)
 
     override fun onDestroy() { super.onDestroy(); stopCamera(); billingAds.destroy(); if (::analysisExecutor.isInitialized) analysisExecutor.shutdown() }
 }
