@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ARDrawing"
+rootProject.name = "Advance Drawing Studio"
 include(":app")

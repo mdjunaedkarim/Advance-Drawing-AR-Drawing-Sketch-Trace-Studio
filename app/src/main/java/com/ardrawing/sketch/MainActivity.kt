@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
         }
         logoCard.addView(logoIv, FrameLayout.LayoutParams(dp(128), dp(128)))
         centerCol.addView(logoCard)
-        centerCol.addView(TextView(this).apply { text = "Free Art Center"; textSize = 26f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); setPadding(0, dp(18), 0, dp(4)) })
+        centerCol.addView(TextView(this).apply { text = "Advance Drawing Studio"; textSize = 26f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); setPadding(0, dp(18), 0, dp(4)) })
         centerCol.addView(TextView(this).apply { text = "AR Sketch & Trace Studio"; textSize = 13f; setTextColor(UiTheme.textSub) })
         centerCol.scaleX = 0.8f; centerCol.scaleY = 0.8f; centerCol.alpha = 0f
         centerCol.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(480).start()
@@ -208,7 +208,12 @@ class MainActivity : ComponentActivity() {
         handler.postDelayed(object : Runnable {
             override fun run() {
                 p = (p + 3).coerceAtMost(100); bar.progress = p; pctTv.text = "${L.t("loading")}... $p%"
-                if (p < 100) handler.postDelayed(this, 52) else handler.postDelayed({ showFlow(Flow.MAIN) }, 200)
+                if (p < 100) handler.postDelayed(this, 52)
+                else handler.postDelayed({
+                    billingAds.showStartupAd(this@MainActivity) {
+                        runOnUiThread { showFlow(Flow.MAIN) }
+                    }
+                }, 200)
             }
         }, 60)
     }
@@ -238,7 +243,7 @@ class MainActivity : ComponentActivity() {
         }
         topBar.addView(TextView(this).apply {
             text = when (currentTab) {
-                Tab.HOME -> "Free Art Center"; Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
+                Tab.HOME -> "Advance Drawing Studio"; Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
             }
             textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(if (currentTab == Tab.HOME) UiTheme.accent else UiTheme.textMain)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -726,7 +731,7 @@ class MainActivity : ComponentActivity() {
         })
         topPill.addView(pillIcon("✓") {
             saveToGallery(activeBmp, "Art"); stopCamera()
-            billingAds.showInterstitial(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
+            billingAds.showRewardedOnComplete(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
         })
 
         val bottomCard = LinearLayout(this).apply {

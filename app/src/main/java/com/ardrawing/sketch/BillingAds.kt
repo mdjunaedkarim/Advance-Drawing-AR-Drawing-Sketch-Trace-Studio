@@ -15,14 +15,16 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.interstitial.InterstitialAd
-import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.appopen.AppOpenAd
+import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAd
+import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAdLoadCallback
 
 data class StorePack(
     val productId: String,
@@ -32,6 +34,14 @@ data class StorePack(
     val isRemoveAds: Boolean = false
 )
 
+data class AdFreePass(
+    val id: String,
+    val coinsCost: Int,
+    val durationMinutes: Int,
+    val labelKey: String,
+    val badgeKey: String? = null
+)
+
 class BillingAdsManager(
     private val context: Context,
     private val onCoinsOrAdsChanged: () -> Unit,
@@ -39,9 +49,9 @@ class BillingAdsManager(
 ) : PurchasesUpdatedListener {
 
     companion object {
-        // Play Store-এ দেওয়ার আগে এগুলো আপনার আসল AdMob Unit ID দিয়ে বদলাবেন
-        const val INTERSTITIAL_AD_ID = "ca-app-pub-3940256099942544/1033173712"
-        const val BANNER_AD_ID = "ca-app-pub-3940256099942544/6300978111"
+        const val APP_OPEN_AD_ID = "ca-app-pub-3832772126171491/3986972658"
+        const val REWARDED_INTERSTITIAL_AD_ID = "ca-app-pub-3832772126171491/4202595074"
+        const val BANNER_AD_ID = "ca-app-pub-3832772126171491/2963720935"
 
         val PACKS = listOf(
             StorePack("coins_10", "Pocket Change", 10, "$0.10"),
@@ -64,7 +74,17 @@ class BillingAdsManager(
             StorePack("coins_5000", "Gallery Vault", 5000, "$50.20"),
             StorePack("coins_7500", "Imperial Chest", 7500, "$74.99"),
             StorePack("coins_10000", "Ultimate Horde", 10000, "$99.99"),
-            StorePack("remove_ads", "Remove All Ads", 0, "$2.99", isRemoveAds = true)
+            StorePack("remove_ads", "Permanent Ad-Free", 0, "$499.99", isRemoveAds = true)
+        )
+
+        val AD_FREE_PASSES = listOf(
+            AdFreePass("adfree_30m", 50, 30, "pass_30m", "pass_badge_starter"),
+            AdFreePass("adfree_1h", 100, 60, "pass_1h", "pass_badge_popular"),
+            AdFreePass("adfree_2h", 200, 120, "pass_2h"),
+            AdFreePass("adfree_4h", 400, 240, "pass_4h"),
+            AdFreePass("adfree_8h", 800, 480, "pass_8h"),
+            AdFreePass("adfree_12h", 1200, 720, "pass_12h"),
+            AdFreePass("adfree_24h", 2000, 1440, "pass_24h", "pass_badge_best")
         )
     }
 
@@ -73,50 +93,121 @@ class BillingAdsManager(
         get() = prefs.getInt("coins", 0)
         private set(v) { prefs.edit().putInt("coins", v).apply() }
 
-    var adsRemoved: Boolean
+    var permanentAdsRemoved: Boolean
         get() = prefs.getBoolean("ads_removed", false)
         private set(v) { prefs.edit().putBoolean("ads_removed", v).apply() }
 
-    private var interstitialAd: InterstitialAd? = null
+    var adFreeUntilMillis: Long
+        get() = prefs.getLong("ad_free_until", 0L)
+        private set(v) { prefs.edit().putLong("ad_free_until", v).apply() }
+
+    val adsRemoved: Boolean
+        get() = permanentAdsRemoved || System.currentTimeMillis() < adFreeUntilMillis
+
+    fun remainingAdFreeMillis(): Long = (adFreeUntilMillis - System.currentTimeMillis()).coerceAtLeast(0L)
+
+    fun redeemAdFreeWithCoins(pass: AdFreePass): Boolean {
+        if (permanentAdsRemoved) {
+            onMessage(L.t("permanent_already_active"))
+            return false
+        }
+        if (coins < pass.coinsCost) {
+            onMessage(L.t("not_enough_coins").replace("{n}", pass.coinsCost.toString()))
+            return false
+        }
+        coins -= pass.coinsCost
+        val now = System.currentTimeMillis()
+        val base = if (adFreeUntilMillis > now) adFreeUntilMillis else now
+        adFreeUntilMillis = base + pass.durationMinutes * 60_000L
+        onCoinsOrAdsChanged()
+        onMessage(L.t("adfree_activated").replace("{t}", L.t(pass.labelKey)))
+        return true
+    }
+
+    private var appOpenAd: AppOpenAd? = null
+    private var rewardedInterstitialAd: RewardedInterstitialAd? = null
     private var billingClient: BillingClient? = null
     private val productMap = HashMap<String, ProductDetails>()
 
     fun init() {
         try {
             MobileAds.initialize(context) {}
-            loadInterstitial()
+            loadAppOpen()
+            loadRewarded()
         } catch (_: Throwable) {}
         connectBilling()
     }
 
-    fun loadInterstitial() {
+    fun loadAppOpen() {
         if (adsRemoved) return
         try {
-            InterstitialAd.load(
+            AppOpenAd.load(
                 context,
-                INTERSTITIAL_AD_ID,
+                APP_OPEN_AD_ID,
                 AdRequest.Builder().build(),
-                object : InterstitialAdLoadCallback() {
-                    override fun onAdLoaded(ad: InterstitialAd) { interstitialAd = ad }
-                    override fun onAdFailedToLoad(err: LoadAdError) { interstitialAd = null }
+                object : AppOpenAd.AppOpenAdLoadCallback() {
+                    override fun onAdLoaded(ad: AppOpenAd) { appOpenAd = ad }
+                    override fun onAdFailedToLoad(err: LoadAdError) { appOpenAd = null }
                 }
             )
         } catch (_: Throwable) {}
     }
 
-    fun showInterstitial(activity: Activity, onFinished: () -> Unit) {
+    fun showStartupAd(activity: Activity, onFinished: () -> Unit) {
         if (adsRemoved) { onFinished(); return }
-        val ad = interstitialAd
-        if (ad == null) { loadInterstitial(); onFinished(); return }
+        val openAd = appOpenAd
+        if (openAd != null) {
+            openAd.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    appOpenAd = null; loadAppOpen(); onFinished()
+                }
+                override fun onAdFailedToShowFullScreenContent(p0: AdError) {
+                    appOpenAd = null; loadAppOpen(); onFinished()
+                }
+            }
+            openAd.show(activity)
+            return
+        }
+        loadAppOpen()
+        onFinished()
+    }
+
+    fun loadRewarded() {
+        if (adsRemoved) return
+        try {
+            RewardedInterstitialAd.load(
+                context,
+                REWARDED_INTERSTITIAL_AD_ID,
+                AdRequest.Builder().build(),
+                object : RewardedInterstitialAdLoadCallback() {
+                    override fun onAdLoaded(ad: RewardedInterstitialAd) { rewardedInterstitialAd = ad }
+                    override fun onAdFailedToLoad(err: LoadAdError) { rewardedInterstitialAd = null }
+                }
+            )
+        } catch (_: Throwable) {}
+    }
+
+    fun showRewardedOnComplete(activity: Activity, onFinished: () -> Unit) {
+        if (adsRemoved) { onFinished(); return }
+        val ad = rewardedInterstitialAd
+        if (ad == null) {
+            loadRewarded()
+            onFinished()
+            return
+        }
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
-                interstitialAd = null; loadInterstitial(); onFinished()
+                rewardedInterstitialAd = null; loadRewarded(); onFinished()
             }
-            override fun onAdFailedToShowFullScreenContent(p0: com.google.android.gms.ads.AdError) {
-                interstitialAd = null; onFinished()
+            override fun onAdFailedToShowFullScreenContent(p0: AdError) {
+                rewardedInterstitialAd = null; loadRewarded(); onFinished()
             }
         }
-        ad.show(activity)
+        ad.show(activity) {
+            coins += 5
+            onCoinsOrAdsChanged()
+            onMessage(L.t("reward_coins_earned"))
+        }
     }
 
     fun attachBanner(container: ViewGroup) {
@@ -200,7 +291,7 @@ class BillingAdsManager(
         val pack = PACKS.find { it.productId == prodId } ?: return
 
         if (pack.isRemoveAds) {
-            adsRemoved = true
+            permanentAdsRemoved = true
             if (!purchase.isAcknowledged) {
                 client.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(purchase.purchaseToken).build()) {}
             }

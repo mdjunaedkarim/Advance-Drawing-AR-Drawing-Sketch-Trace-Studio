@@ -2,6 +2,7 @@ package com.ardrawing.sketch
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -10,12 +11,17 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewOutlineProvider
+import android.view.Window
+import android.view.animation.OvershootInterpolator
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -320,10 +326,12 @@ object UiTabs {
                     } catch (_: Exception) {}
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
                 br.addView(miniBtn("🗑️") {
-                    AlertDialog.Builder(act).setMessage(L.t("delete_confirm"))
-                        .setPositiveButton(L.t("delete")) { _, _ ->
-                            file.delete(); selectedFiles.remove(file.name); prefs.edit().remove("gname_${file.name}").apply(); onRefresh()
-                        }.setNegativeButton(L.t("cancel"), null).show()
+                    showCuteDeletePopup(act, savedName, bmp) {
+                        file.delete()
+                        selectedFiles.remove(file.name)
+                        prefs.edit().remove("gname_${file.name}").apply()
+                        onRefresh()
+                    }
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 addView(br)
             }
@@ -332,31 +340,113 @@ object UiTabs {
         return col
     }
 
+    private fun formatRemainingTime(millis: Long): String {
+        val totalMin = ((millis + 59_999L) / 60_000L).coerceAtLeast(1L)
+        val hrs = totalMin / 60L
+        val mins = totalMin % 60L
+        return if (hrs > 0) "${hrs}h ${mins}m" else "${mins}m"
+    }
+
     fun buildStore(act: Activity, billingAds: BillingAdsManager): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
-        val rootCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(14), dp(14), dp(24)) }
+        val rootCol = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(24))
+        }
+
+        // Hero Balance & Status Banner
+        val heroCard = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.grad(act, if (UiTheme.isDark) "#312E81" else "#6D28D9", if (UiTheme.isDark) "#4C1D95" else "#4F46E5", 22)
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            elevation = dp(6).toFloat()
+        }
+        val heroLeft = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        heroLeft.addView(TextView(act).apply {
+            text = L.t("your_balance")
+            textSize = 12f
+            setTextColor(Color.parseColor("#DDD6FE"))
+        })
+        heroLeft.addView(TextView(act).apply {
+            text = "🪙  ${billingAds.coins} ${L.t("coins_label")}"
+            textSize = 22f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(2), 0, 0)
+        })
+        heroCard.addView(heroLeft, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+
+        val remMillis = billingAds.remainingAdFreeMillis()
+        val statusText = when {
+            billingAds.permanentAdsRemoved -> "👑  ${L.t("adfree_status_perm")}"
+            remMillis > 0L -> "⏳  ${formatRemainingTime(remMillis)}"
+            else -> "🛡️  ${L.t("adfree_status_none")}"
+        }
+        val statusBgColor = when {
+            billingAds.permanentAdsRemoved -> Color.parseColor("#10B981")
+            remMillis > 0L -> Color.parseColor("#F59E0B")
+            else -> Color.parseColor("#33FFFFFF")
+        }
+        heroCard.addView(TextView(act).apply {
+            text = statusText
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (remMillis > 0L && !billingAds.permanentAdsRemoved) Color.parseColor("#1E1B4B") else Color.WHITE)
+            background = UiTheme.round(act, statusBgColor, 14)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+        })
+        rootCol.addView(heroCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+
+        // Segmented Pill Switcher
         val toggleBar = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = UiTheme.round(act, Color.parseColor(if (UiTheme.isDark) "#0F172A" else "#E2E8F0"), 24, UiTheme.stroke)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = UiTheme.round(act, UiTheme.surface, 22, UiTheme.stroke)
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            elevation = dp(2).toFloat()
         }
-        val coinsTab = TextView(act).apply { text = "COINS"; textSize = 13f; setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(10)) }
-        val adFreeTab = TextView(act).apply { text = "AD-FREE"; textSize = 13f; setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER; setPadding(0, dp(10), 0, dp(10)) }
+        val coinsTab = TextView(act).apply {
+            text = "🪙  ${L.t("tab_coins")}"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, dp(10))
+        }
+        val adFreeTab = TextView(act).apply {
+            text = "🛡️  ${L.t("tab_adfree")}"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, dp(10))
+        }
         toggleBar.addView(coinsTab, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         toggleBar.addView(adFreeTab, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        rootCol.addView(toggleBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+        rootCol.addView(toggleBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
         val content = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         rootCol.addView(content)
 
         fun renderStoreContent() {
-            coinsTab.background = if (storeCoinsTab) UiTheme.round(act, Color.parseColor("#FBBF24"), 20) else null
+            coinsTab.background = if (storeCoinsTab) UiTheme.grad(act, "#FBBF24", "#F59E0B", 18) else null
             coinsTab.setTextColor(if (storeCoinsTab) Color.parseColor("#1E1B4B") else UiTheme.textSub)
-            adFreeTab.background = if (!storeCoinsTab) UiTheme.round(act, Color.parseColor("#FBBF24"), 20) else null
+            adFreeTab.background = if (!storeCoinsTab) UiTheme.grad(act, "#FBBF24", "#F59E0B", 18) else null
             adFreeTab.setTextColor(if (!storeCoinsTab) Color.parseColor("#1E1B4B") else UiTheme.textSub)
             content.removeAllViews()
 
             if (storeCoinsTab) {
+                content.addView(TextView(act).apply {
+                    text = L.t("buy_coins_title")
+                    textSize = 16f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                })
+                content.addView(TextView(act).apply {
+                    text = L.t("buy_coins_sub")
+                    textSize = 12f
+                    setTextColor(UiTheme.textSub)
+                    setPadding(0, dp(2), 0, dp(12))
+                })
+
                 val coinPacks = BillingAdsManager.PACKS.filter { !it.isRemoveAds }
                 val cardW = (act.resources.displayMetrics.widthPixels - dp(40)) / 2
                 var row: LinearLayout? = null
@@ -365,43 +455,218 @@ object UiTabs {
                         row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                         content.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
                     }
+                    val badgeText = when (pack.coins) {
+                        500 -> L.t("pass_badge_popular")
+                        10000 -> L.t("pass_badge_best")
+                        else -> null
+                    }
                     val card = LinearLayout(act).apply {
-                        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-                        background = UiTheme.round(act, Color.parseColor(if (UiTheme.isDark) "#162A4F" else "#1D4ED8"), 20)
-                        setPadding(dp(12), dp(14), dp(12), dp(12)); elevation = dp(4).toFloat()
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER_HORIZONTAL
+                        background = UiTheme.round(
+                            act,
+                            UiTheme.surface,
+                            20,
+                            if (badgeText != null) Color.parseColor("#F59E0B") else UiTheme.stroke
+                        )
+                        setPadding(dp(12), dp(14), dp(12), dp(12))
+                        elevation = dp(3).toFloat()
+
+                        if (badgeText != null) {
+                            addView(TextView(act).apply {
+                                text = badgeText
+                                textSize = 10f
+                                setTypeface(null, Typeface.BOLD)
+                                setTextColor(Color.parseColor("#1E1B4B"))
+                                background = UiTheme.round(act, Color.parseColor("#FDE047"), 10)
+                                setPadding(dp(8), dp(2), dp(8), dp(2))
+                            }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+                        } else {
+                            addView(View(act), LinearLayout.LayoutParams(1, dp(4)))
+                        }
+
                         addView(TextView(act).apply {
-                            text = "$"; textSize = 18f; setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER
-                            setTextColor(Color.parseColor("#1D4ED8")); background = UiTheme.round(act, Color.parseColor("#FACC15"), 20)
-                        }, LinearLayout.LayoutParams(dp(38), dp(38)).apply { bottomMargin = dp(8) })
-                        addView(TextView(act).apply { text = pack.title; textSize = 13f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE); maxLines = 1 })
+                            text = "🪙"
+                            textSize = 24f
+                            gravity = Gravity.CENTER
+                            background = UiTheme.round(
+                                act,
+                                Color.parseColor(if (UiTheme.isDark) "#292524" else "#FEF3C7"),
+                                24,
+                                Color.parseColor("#F59E0B")
+                            )
+                        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { bottomMargin = dp(8) })
+
                         addView(TextView(act).apply {
-                            text = "${pack.coins} ${L.t("coins_label")}"; textSize = 15f; setTypeface(null, Typeface.BOLD)
-                            setTextColor(Color.parseColor("#FDE047")); setPadding(0, dp(4), 0, dp(10))
+                            text = "${pack.coins} ${L.t("coins_label")}"
+                            textSize = 16f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                            maxLines = 1
+                        })
+                        addView(TextView(act).apply {
+                            text = pack.title
+                            textSize = 12f
+                            setTextColor(UiTheme.textSub)
+                            maxLines = 1
+                            setPadding(0, dp(2), 0, dp(10))
                         })
                         addView(Button(act).apply {
-                            text = pack.priceLabel; setTextColor(Color.WHITE); textSize = 14f; isAllCaps = false; setTypeface(null, Typeface.BOLD)
-                            background = UiTheme.round(act, Color.parseColor("#4CAF50"), 18)
+                            text = pack.priceLabel
+                            setTextColor(Color.WHITE)
+                            textSize = 14f
+                            isAllCaps = false
+                            setTypeface(null, Typeface.BOLD)
+                            background = UiTheme.grad(act, "#10B981", "#059669", 14)
+                            elevation = dp(2).toFloat()
                             UiTheme.bounce(this) { billingAds.purchase(act, pack) }
-                        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(38)))
+                        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)))
                     }
                     row?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
                 }
             } else {
-                val adPack = BillingAdsManager.PACKS.first { it.isRemoveAds }
-                val done = billingAds.adsRemoved
-                val card = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-                    background = UiTheme.grad(act, "#6D28D9", "#4F46E5", 22); setPadding(dp(20), dp(24), dp(20), dp(20)); elevation = dp(5).toFloat()
-                    addView(TextView(act).apply { text = "🛡️"; textSize = 38f })
-                    addView(TextView(act).apply { text = L.t("remove_ads"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE); setPadding(0, dp(10), 0, dp(6)) })
-                    addView(TextView(act).apply { text = L.t("remove_ads_desc"); textSize = 13f; setTextColor(Color.parseColor("#EDE9FE")); gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(18)) })
-                    addView(Button(act).apply {
-                        text = if (done) L.t("ads_removed") else adPack.priceLabel; setTextColor(Color.WHITE); textSize = 16f; isAllCaps = false; setTypeface(null, Typeface.BOLD)
-                        background = UiTheme.round(act, Color.parseColor(if (done) "#10B981" else "#4CAF50"), 20)
-                        UiTheme.bounce(this) { if (!done) billingAds.purchase(act, adPack) }
-                    }, LinearLayout.LayoutParams(MATCH_PARENT, dp(46)))
+                // Timed Coin-based Ad-Free Section
+                content.addView(TextView(act).apply {
+                    text = "⏳  ${L.t("timed_adfree_title")}"
+                    textSize = 16f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                })
+                content.addView(TextView(act).apply {
+                    text = L.t("timed_adfree_sub")
+                    textSize = 12f
+                    setTextColor(UiTheme.textSub)
+                    setPadding(0, dp(2), 0, dp(12))
+                })
+
+                BillingAdsManager.AD_FREE_PASSES.forEach { pass ->
+                    val canAfford = billingAds.coins >= pass.coinsCost
+                    val isPerm = billingAds.permanentAdsRemoved
+                    val passCard = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = UiTheme.round(
+                            act,
+                            UiTheme.surface,
+                            18,
+                            if (pass.badgeKey != null) UiTheme.accent else UiTheme.stroke
+                        )
+                        setPadding(dp(12), dp(12), dp(12), dp(12))
+                        elevation = dp(3).toFloat()
+                    }
+
+                    passCard.addView(TextView(act).apply {
+                        text = "⏱️"
+                        textSize = 20f
+                        gravity = Gravity.CENTER
+                        background = UiTheme.round(act, UiTheme.surfaceAlt, 14)
+                    }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
+
+                    val infoCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+                    val titleRow = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    titleRow.addView(TextView(act).apply {
+                        text = L.t(pass.labelKey)
+                        textSize = 15f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(UiTheme.textMain)
+                    })
+                    if (pass.badgeKey != null) {
+                        titleRow.addView(TextView(act).apply {
+                            text = L.t(pass.badgeKey)
+                            textSize = 10f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, "#EC4899", "#DB2777", 10)
+                            setPadding(dp(7), dp(2), dp(7), dp(2))
+                        }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
+                    }
+                    infoCol.addView(titleRow)
+                    infoCol.addView(TextView(act).apply {
+                        text = L.t("adfree_pass_desc")
+                        textSize = 11f
+                        setTextColor(UiTheme.textSub)
+                        setPadding(0, dp(2), 0, 0)
+                    })
+                    passCard.addView(infoCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+
+                    val actionBtn = Button(act).apply {
+                        text = if (isPerm) "✓" else "🪙 ${pass.coinsCost}"
+                        textSize = 13f
+                        isAllCaps = false
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(
+                            when {
+                                isPerm -> UiTheme.textSub
+                                canAfford -> Color.WHITE
+                                else -> UiTheme.accent
+                            }
+                        )
+                        background = when {
+                            isPerm -> UiTheme.round(act, UiTheme.surfaceAlt, 14)
+                            canAfford -> UiTheme.grad(act, "#8B5CF6", "#6D28D9", 14)
+                            else -> UiTheme.round(act, UiTheme.surfaceAlt, 14, UiTheme.accent)
+                        }
+                        setPadding(dp(12), 0, dp(12), 0)
+                        UiTheme.bounce(this) {
+                            billingAds.redeemAdFreeWithCoins(pass)
+                        }
+                    }
+                    passCard.addView(actionBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(40)))
+                    content.addView(passCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
                 }
-                content.addView(card)
+
+                // Permanent Ad-Free ($499.99) VIP Card
+                val adPack = BillingAdsManager.PACKS.first { it.isRemoveAds }
+                val permDone = billingAds.permanentAdsRemoved
+                val vipCard = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    background = UiTheme.grad(act, "#4C1D95", "#7C3AED", 22)
+                    setPadding(dp(20), dp(20), dp(20), dp(20))
+                    elevation = dp(6).toFloat()
+
+                    addView(TextView(act).apply {
+                        text = "👑  LIFETIME VIP"
+                        textSize = 11f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(Color.parseColor("#1E1B4B"))
+                        background = UiTheme.round(act, Color.parseColor("#FDE047"), 12)
+                        setPadding(dp(10), dp(4), dp(10), dp(4))
+                    }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+                    addView(TextView(act).apply {
+                        text = L.t("perm_adfree_title")
+                        textSize = 20f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(Color.WHITE)
+                        gravity = Gravity.CENTER
+                    })
+                    addView(TextView(act).apply {
+                        text = L.t("perm_adfree_desc")
+                        textSize = 13f
+                        setTextColor(Color.parseColor("#EDE9FE"))
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(6), 0, dp(16))
+                    })
+                    addView(Button(act).apply {
+                        text = if (permDone) L.t("ads_removed") else "👑  ${adPack.priceLabel} — ${L.t("unlock_forever")}"
+                        setTextColor(if (permDone) Color.WHITE else Color.parseColor("#1E1B4B"))
+                        textSize = 15f
+                        isAllCaps = false
+                        setTypeface(null, Typeface.BOLD)
+                        background = if (permDone) {
+                            UiTheme.round(act, Color.parseColor("#10B981"), 16)
+                        } else {
+                            UiTheme.grad(act, "#FDE047", "#F59E0B", 16)
+                        }
+                        elevation = dp(3).toFloat()
+                        UiTheme.bounce(this) { if (!permDone) billingAds.purchase(act, adPack) }
+                    }, LinearLayout.LayoutParams(MATCH_PARENT, dp(48)))
+                }
+                content.addView(vipCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) })
             }
         }
         UiTheme.bounce(coinsTab) { storeCoinsTab = true; renderStoreContent() }
@@ -452,9 +717,137 @@ object UiTabs {
         }
         addSetting("⭐  ${L.t("rate_us")}") { openPlayStore(act) }
         addSetting("✉️  ${L.t("feedback")}") {
-            try { act.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply { putExtra(Intent.EXTRA_SUBJECT, "Free Art Center Feedback") }) } catch (_: Exception) {}
+            try { act.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply { putExtra(Intent.EXTRA_SUBJECT, "Advance Drawing Studio Feedback") }) } catch (_: Exception) {}
         }
         return col
+    }
+
+    private fun showCuteDeletePopup(
+        act: Activity,
+        drawingName: String,
+        bmp: Bitmap?,
+        onConfirm: () -> Unit
+    ) {
+        val dp = { v: Int -> UiTheme.dp(act, v) }
+        val dialog = Dialog(act)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setCanceledOnTouchOutside(true)
+
+        val card = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = UiTheme.round(act, UiTheme.surface, 26, UiTheme.stroke)
+            setPadding(dp(22), dp(22), dp(22), dp(20))
+            elevation = dp(14).toFloat()
+        }
+
+        val iconBox = FrameLayout(act)
+        if (bmp != null) {
+            val thumbWrap = FrameLayout(act).apply {
+                background = UiTheme.round(act, UiTheme.surfaceAlt, 22, UiTheme.stroke)
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+            }
+            val thumbIv = ImageView(act).apply {
+                setImageBitmap(bmp)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(v: View, o: Outline) {
+                        o.setRoundRect(0, 0, v.width, v.height, dp(18).toFloat())
+                    }
+                }
+                clipToOutline = true
+            }
+            thumbWrap.addView(thumbIv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            iconBox.addView(thumbWrap, FrameLayout.LayoutParams(dp(78), dp(78), Gravity.CENTER))
+        } else {
+            val softCircle = TextView(act).apply {
+                text = "🎨"
+                textSize = 32f
+                gravity = Gravity.CENTER
+                background = UiTheme.round(
+                    act,
+                    Color.parseColor(if (UiTheme.isDark) "#2E1A2B" else "#FFE4E6"),
+                    36
+                )
+            }
+            iconBox.addView(softCircle, FrameLayout.LayoutParams(dp(74), dp(74), Gravity.CENTER))
+        }
+
+        val badge = TextView(act).apply {
+            text = "🗑️"
+            textSize = 14f
+            gravity = Gravity.CENTER
+            background = UiTheme.grad(act, "#FB7185", "#E11D48", 16)
+            elevation = dp(4).toFloat()
+        }
+        iconBox.addView(badge, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.BOTTOM or Gravity.END))
+        card.addView(iconBox, LinearLayout.LayoutParams(dp(90), dp(88)).apply { bottomMargin = dp(14) })
+
+        card.addView(TextView(act).apply {
+            text = L.t("delete_confirm")
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain)
+            gravity = Gravity.CENTER
+        })
+
+        card.addView(TextView(act).apply {
+            text = "$drawingName — ${L.t("delete_sub")}"
+            textSize = 13f
+            setTextColor(UiTheme.textSub)
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(6), dp(4), dp(18))
+        })
+
+        val btnRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        val cancelBtn = Button(act).apply {
+            text = L.t("cancel")
+            textSize = 14f
+            isAllCaps = false
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain)
+            background = UiTheme.round(act, UiTheme.surfaceAlt, 16, UiTheme.stroke)
+            UiTheme.bounce(this) { dialog.dismiss() }
+        }
+        val deleteBtn = Button(act).apply {
+            text = "🗑️  ${L.t("delete")}"
+            textSize = 14f
+            isAllCaps = false
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            background = UiTheme.grad(act, "#FB7185", "#E11D48", 16)
+            elevation = dp(3).toFloat()
+            UiTheme.bounce(this) {
+                dialog.dismiss()
+                onConfirm()
+            }
+        }
+        btnRow.addView(cancelBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(10) })
+        btnRow.addView(deleteBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
+        card.addView(btnRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+
+        val dialogWidth = (act.resources.displayMetrics.widthPixels - dp(48)).coerceAtMost(dp(360))
+        val container = FrameLayout(act)
+        container.addView(card, FrameLayout.LayoutParams(dialogWidth, WRAP_CONTENT, Gravity.CENTER))
+
+        dialog.setContentView(container)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.55f)
+            setLayout(WRAP_CONTENT, WRAP_CONTENT)
+        }
+        dialog.show()
+
+        card.scaleX = 0.82f
+        card.scaleY = 0.82f
+        card.alpha = 0f
+        card.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(220)
+            .setInterpolator(OvershootInterpolator(1.3f))
+            .start()
     }
 
     private fun openPlayStore(act: Activity) {
