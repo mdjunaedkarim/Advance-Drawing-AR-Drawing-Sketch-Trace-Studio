@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
     private lateinit var analysisExecutor: ExecutorService
     private val handler = Handler(Looper.getMainLooper())
-    private val tracker = PlaneTracker()
+    private val tracker by lazy { PlaneTracker() }
 
     private lateinit var billingAds: BillingAdsManager
     private val prefs by lazy { getSharedPreferences("ar_draw_prefs", MODE_PRIVATE) }
@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OpenCVLoader.initLocal()
+        try { OpenCVLoader.initLocal() } catch (_: Throwable) {}
         L.lang = prefs.getString("lang", "en") ?: "en"
         analysisExecutor = Executors.newSingleThreadExecutor()
 
@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
             onCoinsOrAdsChanged = { runOnUiThread { if (flow == Flow.MAIN) renderMain() } },
             onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } }
         )
-        billingAds.init()
+        try { billingAds.init() } catch (_: Throwable) {}
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0B0F19")) }
         setContentView(root)
@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when (flow) {
-                    Flow.SPLASH -> { /* লোডিং শেষ না হওয়া পর্যন্ত বের হওয়া যাবে না */ }
+                    Flow.SPLASH -> {}
                     Flow.CAMERA -> {
                         stopCamera()
                         showFlow(Flow.EDITOR)
@@ -149,7 +149,20 @@ class MainActivity : ComponentActivity() {
         showSplash()
     }
 
-    // ---------------- 1. SPLASH (1% -> 100%) ----------------
+    private fun loadSafeLogoBitmap(maxPx: Int): Bitmap? {
+        return try {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeResource(resources, R.drawable.app_logo, opts)
+            if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
+            var s = 1
+            while (opts.outWidth / s > maxPx || opts.outHeight / s > maxPx) s *= 2
+            val dec = BitmapFactory.Options().apply { inSampleSize = s }
+            BitmapFactory.decodeResource(resources, R.drawable.app_logo, dec)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun showSplash() {
         flow = Flow.SPLASH
         root.removeAllViews()
@@ -169,7 +182,9 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         val logoIv = ImageView(this).apply {
-            setImageResource(R.drawable.app_logo)
+            val safeLogo = loadSafeLogoBitmap(320)
+            if (safeLogo != null) setImageBitmap(safeLogo)
+            else setImageResource(R.drawable.app_logo)
             scaleType = ImageView.ScaleType.CENTER_CROP
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(v: View, o: Outline) { o.setOval(0, 0, v.width, v.height) }
@@ -231,12 +246,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------- 2. MAIN SHELL (TOP COINS + TAB + AD + BOTTOM NAV) ----------------
     private fun renderMain() {
         root.removeAllViews()
         val mainCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        // Top Bar + Coin Balance
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -270,7 +283,6 @@ class MainActivity : ComponentActivity() {
         topBar.addView(coinBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(36)))
         mainCol.addView(topBar)
 
-        // Content Scroll Area
         val contentScroll = ScrollView(this)
         val body = when (currentTab) {
             Tab.HOME -> buildHomeTab()
@@ -281,16 +293,12 @@ class MainActivity : ComponentActivity() {
         contentScroll.addView(body)
         mainCol.addView(contentScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
-        // Banner Ad (hide automatically when ads removed)
         if (!billingAds.adsRemoved) {
-            val adBox = FrameLayout(this).apply {
-                setBackgroundColor(Color.parseColor("#0B0F19"))
-            }
+            val adBox = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0B0F19")) }
             billingAds.attachBanner(adBox)
             mainCol.addView(adBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
 
-        // Bottom Navigation Bar (4 Tabs)
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#121826"))
@@ -332,25 +340,18 @@ class MainActivity : ComponentActivity() {
         root.addView(mainCol, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
-    // ---------------- TAB 1: HOME ----------------
     private fun buildHomeTab(): View {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(20))
         }
-
         col.addView(TextView(this).apply {
             text = L.t("home_sub")
             textSize = 14f
             setTextColor(Color.parseColor("#94A3B8"))
             setPadding(0, 0, 0, dp(16))
         })
-
-        // Drawing Create Button
-        col.addView(actionBtn("✏️  ${L.t("drawing_create")}", "#4F46E5", 58) {
-            showSourceChooser()
-        })
-
+        col.addView(actionBtn("✏️  ${L.t("drawing_create")}", "#4F46E5", 58) { showSourceChooser() })
         col.addView(TextView(this).apply {
             text = L.t("samples")
             textSize = 15f
@@ -369,13 +370,9 @@ class MainActivity : ComponentActivity() {
                     setImageBitmap(thumb)
                     scaleType = ImageView.ScaleType.FIT_CENTER
                 }, FrameLayout.LayoutParams(dp(100), dp(100)))
-                setOnClickListener {
-                    openEditorWithBitmap(Samples.render(i, 960))
-                }
+                setOnClickListener { openEditorWithBitmap(Samples.render(i, 960)) }
             }
-            row.addView(card, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-                marginEnd = dp(10)
-            })
+            row.addView(card, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(10) })
         }
         col.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -406,13 +403,11 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    // ---------------- TAB 2: MY GALLERY (1:1 SQUARE) ----------------
     private fun buildGalleryTab(): View {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(20))
         }
-
         col.addView(actionBtn("➕  ${L.t("import_photo")}", "#2563EB", 48) {
             importToGalleryMode = true
             pickGalleryLauncher.launch("image/*")
@@ -437,11 +432,8 @@ class MainActivity : ComponentActivity() {
         files.forEachIndexed { idx, file ->
             if (idx % 2 == 0) {
                 row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                    bottomMargin = dp(12)
-                })
+                col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
             }
-
             val bmp = BitmapFactory.decodeFile(file.absolutePath)
             val savedName = prefs.getString("gname_${file.name}", "Drawing #${files.size - idx}") ?: "Drawing"
 
@@ -449,17 +441,12 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 background = roundedBg("#161E31", 14)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
-
-                // ১:১ সাইজের বর্গাকার ছবি
                 addView(ImageView(this@MainActivity).apply {
                     setImageBitmap(bmp)
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     setBackgroundColor(Color.parseColor("#0B0F19"))
-                    setOnClickListener {
-                        if (bmp != null) openEditorWithBitmap(bmp)
-                    }
+                    setOnClickListener { if (bmp != null) openEditorWithBitmap(bmp) }
                 }, LinearLayout.LayoutParams(MATCH_PARENT, cardSize - dp(16)))
-
                 addView(TextView(this@MainActivity).apply {
                     text = savedName
                     setTextColor(Color.WHITE)
@@ -467,7 +454,6 @@ class MainActivity : ComponentActivity() {
                     maxLines = 1
                     setPadding(0, dp(6), 0, dp(4))
                 })
-
                 val btnRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
                 fun miniBtn(txt: String, onTap: () -> Unit) = TextView(this@MainActivity).apply {
                     text = txt
@@ -486,7 +472,6 @@ class MainActivity : ComponentActivity() {
                     LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 addView(btnRow)
             }
-
             row?.addView(card, LinearLayout.LayoutParams(cardSize, WRAP_CONTENT).apply {
                 if (idx % 2 == 0) marginEnd = dp(12)
             })
@@ -495,10 +480,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun renameGalleryItem(file: File, currentName: String) {
-        val input = EditText(this).apply {
-            setText(currentName)
-            hint = L.t("rename_hint")
-        }
+        val input = EditText(this).apply { setText(currentName); hint = L.t("rename_hint") }
         AlertDialog.Builder(this)
             .setTitle(L.t("rename"))
             .setView(input)
@@ -538,13 +520,11 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    // ---------------- TAB 3: STORE (COINS $0.10-$10 + REMOVE ADS) ----------------
     private fun buildStoreTab(): View {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(20))
         }
-
         BillingAdsManager.PACKS.forEach { pack ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -566,34 +546,26 @@ class MainActivity : ComponentActivity() {
                     setTextColor(Color.parseColor("#CBD5E1"))
                 })
             }
-
             val alreadyRemoved = pack.isRemoveAds && billingAds.adsRemoved
             val buyBtn = Button(this).apply {
                 text = if (alreadyRemoved) L.t("ads_removed") else pack.priceLabel
                 setTextColor(Color.WHITE)
                 isAllCaps = false
                 background = roundedBg(if (alreadyRemoved) "#10B981" else "#4F46E5", 10)
-                setOnClickListener {
-                    if (!alreadyRemoved) billingAds.purchase(this@MainActivity, pack)
-                }
+                setOnClickListener { if (!alreadyRemoved) billingAds.purchase(this@MainActivity, pack) }
             }
-
             card.addView(infoCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             card.addView(buyBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(42)))
-            col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                bottomMargin = dp(10)
-            })
+            col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
         }
         return col
     }
 
-    // ---------------- TAB 4: SETTINGS (15 LANGUAGES + PLAY STORE LINKS) ----------------
     private fun buildSettingsTab(): View {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(24))
         }
-
         val curLangLabel = L.languages.find { it.code == L.lang }?.label ?: "English"
         col.addView(actionBtn("🌐  ${L.t("language")}: $curLangLabel", "#1E293B", 50) {
             val labels = L.languages.map { it.label }.toTypedArray()
@@ -604,22 +576,13 @@ class MainActivity : ComponentActivity() {
                     L.lang = chosen
                     prefs.edit().putString("lang", chosen).apply()
                     renderMain()
-                }
-                .show()
+                }.show()
         })
-
         col.addView(actionBtn("🔒  ${L.t("privacy_policy")}", "#1E293B", 50) {
-            AlertDialog.Builder(this)
-                .setTitle(L.t("privacy_policy"))
-                .setMessage(L.t("privacy_text"))
-                .setPositiveButton("OK", null)
-                .show()
+            AlertDialog.Builder(this).setTitle(L.t("privacy_policy"))
+                .setMessage(L.t("privacy_text")).setPositiveButton("OK", null).show()
         })
-
-        col.addView(actionBtn("ℹ️  ${L.t("about")}", "#1E293B", 50) {
-            openPlayStorePage()
-        })
-
+        col.addView(actionBtn("ℹ️  ${L.t("about")}", "#1E293B", 50) { openPlayStorePage() })
         col.addView(actionBtn("📤  ${L.t("share_friend")}", "#2563EB", 50) {
             val url = "https://play.google.com/store/apps/details?id=$packageName"
             val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -631,18 +594,13 @@ class MainActivity : ComponentActivity() {
             }
             startActivity(Intent.createChooser(intent, L.t("share_friend")))
         })
-
-        col.addView(actionBtn("⭐  ${L.t("rate_us")}", "#1E293B", 50) {
-            openPlayStorePage()
-        })
-
+        col.addView(actionBtn("⭐  ${L.t("rate_us")}", "#1E293B", 50) { openPlayStorePage() })
         col.addView(actionBtn("✉️  ${L.t("feedback")}", "#1E293B", 50) {
             val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
                 putExtra(Intent.EXTRA_SUBJECT, "AR Drawing Feedback")
             }
             try { startActivity(intent) } catch (_: Exception) {}
         })
-
         return col
     }
 
@@ -654,7 +612,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------- 3. EDITOR (REMOVE BG + OPACITY + NEXT) ----------------
     private fun openEditorWithBitmap(bmp: Bitmap) {
         originalBitmap = bmp
         cutoutBitmap = null
@@ -671,7 +628,6 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(36), dp(18), dp(24))
         }
-
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -697,16 +653,9 @@ class MainActivity : ComponentActivity() {
             background = roundedBg("#161E31", 16)
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
-        col.addView(previewIv, LinearLayout.LayoutParams(MATCH_PARENT, dp(280)).apply {
-            bottomMargin = dp(16)
-        })
+        col.addView(previewIv, LinearLayout.LayoutParams(MATCH_PARENT, dp(280)).apply { bottomMargin = dp(16) })
 
-        val bgBtn = Button(this).apply {
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            textSize = 15f
-        }
-
+        val bgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 15f }
         fun updateEditorVisual() {
             val active = if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap
             previewIv.setImageBitmap(active)
@@ -723,13 +672,9 @@ class MainActivity : ComponentActivity() {
         bgBtn.setOnClickListener {
             if (isProcessingBg) return@setOnClickListener
             val orig = originalBitmap ?: return@setOnClickListener
-            if (bgRemoved) {
-                bgRemoved = false
-                updateEditorVisual()
-            } else if (cutoutBitmap != null) {
-                bgRemoved = true
-                updateEditorVisual()
-            } else {
+            if (bgRemoved) { bgRemoved = false; updateEditorVisual() }
+            else if (cutoutBitmap != null) { bgRemoved = true; updateEditorVisual() }
+            else {
                 isProcessingBg = true
                 updateEditorVisual()
                 ImageProcessor.removeBackgroundAsync(orig) { res ->
@@ -744,14 +689,9 @@ class MainActivity : ComponentActivity() {
         }
         col.addView(bgBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(50)).apply { bottomMargin = dp(14) })
 
-        col.addView(TextView(this).apply {
-            text = L.t("opacity")
-            setTextColor(Color.parseColor("#CBD5E1"))
-            textSize = 14f
-        })
+        col.addView(TextView(this).apply { text = L.t("opacity"); setTextColor(Color.parseColor("#CBD5E1")); textSize = 14f })
         col.addView(SeekBar(this).apply {
-            max = 100
-            progress = opacityPercent
+            max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 opacityPercent = p.coerceAtLeast(10)
                 previewIv.alpha = opacityPercent / 100f
@@ -760,28 +700,20 @@ class MainActivity : ComponentActivity() {
 
         col.addView(actionBtn("${L.t("next")} →", "#10B981", 54) {
             val active = if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap
-            if (active == null) {
-                Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
-            } else {
-                val ok = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-                    PackageManager.PERMISSION_GRANTED
+            if (active == null) Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
+            else {
+                val ok = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 if (ok) showFlow(Flow.CAMERA)
-                else {
-                    openCameraAfterPermission = false
-                    cameraPermLauncher.launch(Manifest.permission.CAMERA)
-                }
+                else { openCameraAfterPermission = false; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
             }
         })
-
         scroll.addView(col)
         root.addView(scroll, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
-    // ---------------- 4. AR CAMERA (BRIGHTNESS + FLASH + LOCK + NEXT) ----------------
     private fun renderCamera() {
         root.removeAllViews()
         torchOn = false
-
         val baseBmp = (if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap) ?: return
         val previewView = PreviewView(this)
         val overlay = OverlayView(this).apply {
@@ -791,296 +723,12 @@ class MainActivity : ComponentActivity() {
         overlayView = overlay
 
         val hintTv = TextView(this).apply {
-            text = L.t("hint_place")
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            background = roundedBg("#AA000000", 12)
+            text = L.t("hint_place"); setTextColor(Color.WHITE); textSize = 13f
+            gravity = Gravity.CENTER; background = roundedBg("#AA000000", 12)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
         cameraHintView = hintTv
 
         val backBtn = Button(this).apply {
-            text = "←"
-            setTextColor(Color.WHITE)
-            background = roundedBg("#AA111827", 20)
-            setOnClickListener {
-                stopCamera()
-                showFlow(Flow.EDITOR)
-            }
-        }
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(36), dp(12), dp(8))
-            addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(8) })
-            addView(hintTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        }
-
-        val bottomPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBg("#D90F172A", 18)
-            setPadding(dp(14), dp(10), dp(14), dp(14))
-        }
-
-        bottomPanel.addView(TextView(this).apply {
-            text = L.t("brightness")
-            setTextColor(Color.WHITE)
-            textSize = 12f
-        })
-        bottomPanel.addView(SeekBar(this).apply {
-            max = 100
-            progress = brightness + 50
-            setOnSeekBarChangeListener(simpleSeek { p ->
-                brightness = p - 50
-                overlay.setBitmap(ImageProcessor.applyBrightness(baseBmp, brightness), resetPos = false)
-            })
-        })
-
-        bottomPanel.addView(TextView(this).apply {
-            text = L.t("opacity")
-            setTextColor(Color.WHITE)
-            textSize = 12f
-        })
-        bottomPanel.addView(SeekBar(this).apply {
-            max = 100
-            progress = opacityPercent
-            setOnSeekBarChangeListener(simpleSeek { p ->
-                opacityPercent = p.coerceAtLeast(10)
-                overlay.setOpacity(opacityPercent)
-            })
-        })
-
-        val btnRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(10), 0, 0)
-        }
-
-        val flashBtn = Button(this).apply {
-            text = "🔦 ${L.t("flash")}"
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            textSize = 13f
-            background = roundedBg("#334155", 10)
-            setOnClickListener {
-                torchOn = !torchOn
-                boundCamera?.cameraControl?.enableTorch(torchOn)
-                background = roundedBg(if (torchOn) "#F59E0B" else "#334155", 10)
-            }
-        }
-
-        val lockBtn = Button(this).apply {
-            text = "🔒 ${L.t("lock")}"
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            textSize = 13f
-            background = roundedBg("#2563EB", 10)
-            setOnClickListener {
-                if (!overlay.isLocked) {
-                    tracker.startLock()
-                    overlay.lock()
-                    text = "🔓 ${L.t("unlock")}"
-                    background = roundedBg("#D97706", 10)
-                    hintTv.text = L.t("hint_locked")
-                } else {
-                    tracker.stopLock()
-                    overlay.unlock()
-                    text = "🔒 ${L.t("lock")}"
-                    background = roundedBg("#2563EB", 10)
-                    hintTv.text = L.t("hint_place")
-                }
-            }
-        }
-
-        val nextBtn = Button(this).apply {
-            text = "${L.t("next")} ✓"
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            textSize = 13f
-            background = roundedBg("#10B981", 10)
-            setOnClickListener {
-                saveToGallery(baseBmp, "Drawing")
-                stopCamera()
-                billingAds.showInterstitial(this@MainActivity) {
-                    runOnUiThread { showFlow(Flow.CONGRATS) }
-                }
-            }
-        }
-
-        btnRow.addView(flashBtn, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) })
-        btnRow.addView(lockBtn, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) })
-        btnRow.addView(nextBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
-        bottomPanel.addView(btnRow)
-
-        root.addView(previewView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        root.addView(topRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
-        root.addView(bottomPanel, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply {
-            setMargins(dp(12), 0, dp(12), dp(18))
-        })
-
-        startCamera(previewView)
-    }
-
-    // ---------------- 5. CONGRATS ----------------
-    private fun renderCongrats() {
-        root.removeAllViews()
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(28), dp(28), dp(28), dp(28))
-        }
-        col.addView(TextView(this).apply {
-            text = L.t("congrats")
-            textSize = 28f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-        })
-        col.addView(TextView(this).apply {
-            text = L.t("good_luck")
-            textSize = 16f
-            setTextColor(Color.parseColor("#CBD5E1"))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(28))
-        })
-        col.addView(actionBtn(L.t("go_home"), "#4F46E5", 52) { showFlow(Flow.MAIN) })
-        root.addView(col, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-    }
-
-    // ---------------- CAMERA X + IMAGE IO ----------------
-    private fun startCamera(previewView: PreviewView) {
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener({
-            try {
-                val provider = future.get()
-                cameraProvider = provider
-
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                val analysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-
-                analysis.setAnalyzer(analysisExecutor) { image ->
-                    try {
-                        val out = tracker.process(image)
-                        val ov = overlayView
-                        if (ov != null && ov.isLocked) {
-                            runOnUiThread {
-                                ov.updateTracking(out)
-                                cameraHintView?.text =
-                                    if (out.good) L.t("hint_locked") else L.t("hint_lost")
-                            }
-                        }
-                    } finally {
-                        image.close()
-                    }
-                }
-
-                provider.unbindAll()
-                boundCamera = provider.bindToLifecycle(
-                    this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
-                )
-            } catch (_: Exception) {
-                Toast.makeText(this, L.t("camera_error"), Toast.LENGTH_LONG).show()
-            }
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun stopCamera() {
-        try { boundCamera?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
-        boundCamera = null
-        torchOn = false
-        tracker.stopLock()
-        cameraProvider?.unbindAll()
-        overlayView = null
-        cameraHintView = null
-    }
-
-    private fun launchTakePhoto() {
-        val file = File(cacheDir, "cam_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        pendingCameraUri = uri
-        takePhotoLauncher.launch(uri)
-    }
-
-    private fun handlePickedUri(uri: Uri) {
-        try {
-            val source = ImageDecoder.createSource(contentResolver, uri)
-            val bmp = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                val maxSide = maxOf(info.size.width, info.size.height)
-                if (maxSide > 1080) {
-                    val s = 1080f / maxSide
-                    decoder.setTargetSize(
-                        (info.size.width * s).toInt().coerceAtLeast(1),
-                        (info.size.height * s).toInt().coerceAtLeast(1)
-                    )
-                }
-            }
-            val clean = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
-            if (importToGalleryMode) {
-                saveToGallery(clean, "Imported")
-                renderMain()
-            } else {
-                openEditorWithBitmap(clean)
-            }
-        } catch (_: Exception) {
-            Toast.makeText(this, L.t("image_failed"), Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun saveToGallery(bmp: Bitmap?, prefix: String) {
-        if (bmp == null) return
-        try {
-            val scale = 512f / maxOf(bmp.width, bmp.height).coerceAtLeast(1)
-            val thumb = Bitmap.createScaledBitmap(
-                bmp,
-                (bmp.width * scale).toInt().coerceAtLeast(1),
-                (bmp.height * scale).toInt().coerceAtLeast(1),
-                true
-            )
-            val name = "art_${System.currentTimeMillis()}.png"
-            val file = File(galleryDir, name)
-            FileOutputStream(file).use { thumb.compress(Bitmap.CompressFormat.PNG, 92, it) }
-            val count = (galleryDir.listFiles()?.size ?: 1)
-            prefs.edit().putString("gname_$name", "$prefix #$count").apply()
-        } catch (_: Exception) {}
-    }
-
-    private fun actionBtn(label: String, hex: String, heightDp: Int, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setTextColor(Color.WHITE)
-        textSize = 15f
-        isAllCaps = false
-        background = roundedBg(hex, 12)
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(heightDp)).apply {
-            bottomMargin = dp(10)
-        }
-        setOnClickListener { onClick() }
-    }
-
-    private fun roundedBg(hex: String, radiusDp: Int) = GradientDrawable().apply {
-        setColor(Color.parseColor(hex))
-        cornerRadius = dp(radiusDp).toFloat()
-    }
-
-    private fun simpleSeek(onChange: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-            if (fromUser) onChange(p)
-        }
-        override fun onStartTrackingTouch(sb: SeekBar?) {}
-        override fun onStopTrackingTouch(sb: SeekBar?) {}
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    override fun onDestroy() {
-        super.onDestroy()
-        stopCamera()
-        billingAds.destroy()
-        if (::analysisExecutor.isInitialized) analysisExecutor.shutdown()
-    }
-}
+            text = "←"; setTextColor(Color.WHITE); background = roundedBg("#AA111827", 20)
+            setOnClickListener { stopCamera(); showFlow(Flo
