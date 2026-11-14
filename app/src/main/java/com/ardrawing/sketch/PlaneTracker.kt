@@ -49,4 +49,70 @@ object Frames {
         when (image.imageInfo.rotationDegrees) {
             90 -> Core.rotate(small, up, Core.ROTATE_90_CLOCKWISE)
             180 -> Core.rotate(small, up, Core.ROTATE_180)
-            270 -> Core.rotate(small, up,
+            270 -> Core.rotate(small, up, Core.ROTATE_90_COUNTERCLOCKWISE)
+            else -> small.copyTo(up)
+        }
+        small.release()
+        return up
+    }
+}
+
+class PlaneTracker {
+    class Out(val h: FloatArray, val rw: Int, val rh: Int, val good: Boolean)
+
+    private var prev: Mat? = null
+    private var anchor: Mat? = null
+    private var anchorKp: MatOfKeyPoint? = null
+    private var anchorDesc: Mat? = null
+
+    private val orb = ORB.create(600)
+    private val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
+
+    private val rawH = DoubleArray(9)
+    private var smoothCorners: Array<Point>? = null
+    private val outH = FloatArray(9)
+
+    private var locked = false
+    private var captureNextAnchor = false
+    private var frameCount = 0
+
+    init {
+        setIdentity()
+    }
+
+    private fun setIdentity() {
+        for (i in 0 until 9) {
+            rawH[i] = if (i % 4 == 0) 1.0 else 0.0
+            outH[i] = rawH[i].toFloat()
+        }
+        smoothCorners = null
+    }
+
+    @Synchronized
+    fun startLock() {
+        clearAnchor()
+        setIdentity()
+        locked = true
+        captureNextAnchor = true
+        frameCount = 0
+    }
+
+    @Synchronized
+    fun stopLock() {
+        locked = false
+        captureNextAnchor = false
+        clearAnchor()
+        setIdentity()
+    }
+
+    private fun clearAnchor() {
+        anchor?.release(); anchor = null
+        anchorKp?.release(); anchorKp = null
+        anchorDesc?.release(); anchorDesc = null
+    }
+
+    @Synchronized
+    fun process(image: ImageProxy): Out {
+        val cur = Frames.uprightGray(image)
+        val w = cur.cols()
+        val h = cur.rows()
