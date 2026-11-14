@@ -2,7 +2,13 @@ package com.ardrawing.sketch
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.view.Gravity
 import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.FrameLayout
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -125,38 +131,59 @@ class BillingAdsManager(
     }
 
     private var appOpenAd: AppOpenAd? = null
+    private var isLoadingAppOpen = false
+    private var pendingStartupShown = false
+    private var pendingStartupCallback: (() -> Unit)? = null
     private var rewardedInterstitialAd: RewardedInterstitialAd? = null
+    private var cachedBannerView: AdView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var billingClient: BillingClient? = null
     private val productMap = HashMap<String, ProductDetails>()
 
     fun init() {
         try {
-            MobileAds.initialize(context) {}
-            loadAppOpen()
-            loadRewarded()
+            MobileAds.initialize(context) {
+                loadAppOpen()
+                loadRewarded()
+            }
         } catch (_: Throwable) {}
         connectBilling()
     }
 
     fun loadAppOpen() {
-        if (adsRemoved) return
+        if (adsRemoved || isLoadingAppOpen || appOpenAd != null) return
+        isLoadingAppOpen = true
         try {
             AppOpenAd.load(
                 context,
                 APP_OPEN_AD_ID,
                 AdRequest.Builder().build(),
                 object : AppOpenAd.AppOpenAdLoadCallback() {
-                    override fun onAdLoaded(ad: AppOpenAd) { appOpenAd = ad }
-                    override fun onAdFailedToLoad(err: LoadAdError) { appOpenAd = null }
+                    override fun onAdLoaded(ad: AppOpenAd) {
+                        isLoadingAppOpen = false
+                        appOpenAd = ad
+                        Log.d("AdMob", "AppOpen loaded")
+                        pendingStartupCallback?.invoke()
+                    }
+                    override fun onAdFailedToLoad(err: LoadAdError) {
+                        isLoadingAppOpen = false
+                        appOpenAd = null
+                        Log.w("AdMob", "AppOpen failed: ${err.code} ${err.message}")
+                        pendingStartupCallback?.invoke()
+                    }
                 }
             )
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+            isLoadingAppOpen = false
+        }
     }
 
     fun showStartupAd(activity: Activity, onFinished: () -> Unit) {
-        if (adsRemoved) { onFinished(); return }
+        if (adsRemoved || pendingStartupShown) { onFinished(); return }
         val openAd = appOpenAd
         if (openAd != null) {
+            pendingStartupShown = true
+            pendingStartupCallback = null
             openAd.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
                     appOpenAd = null; loadAppOpen(); onFinished()
@@ -168,20 +195,62 @@ class BillingAdsManager(
             openAd.show(activity)
             return
         }
+
+        if (isLoadingAppOpen) {
+            var completed = false
+            val timeoutRunnable = Runnable {
+                if (!completed) {
+                    completed = true
+                    pendingStartupCallback = null
+                    onFinished()
+                }
+            }
+            pendingStartupCallback = {
+                if (!completed) {
+                    completed = true
+                    mainHandler.removeCallbacks(timeoutRunnable)
+                    pendingStartupCallback = null
+                    val loaded = appOpenAd
+                    if (loaded != null && !activity.isFinishing && !activity.isDestroyed) {
+                        pendingStartupShown = true
+                        loaded.fullScreenContentCallback = object : FullScreenContentCallback() {
+                            override fun onAdDismissedFullScreenContent() {
+                                appOpenAd = null; loadAppOpen(); onFinished()
+                            }
+                            override fun onAdFailedToShowFullScreenContent(p0: AdError) {
+                                appOpenAd = null; loadAppOpen(); onFinished()
+                            }
+                        }
+                        loaded.show(activity)
+                    } else {
+                        onFinished()
+                    }
+                }
+            }
+            mainHandler.postDelayed(timeoutRunnable, 2500)
+            return
+        }
+
         loadAppOpen()
         onFinished()
     }
 
     fun loadRewarded() {
-        if (adsRemoved) return
+        if (adsRemoved || rewardedInterstitialAd != null) return
         try {
             RewardedInterstitialAd.load(
                 context,
                 REWARDED_INTERSTITIAL_AD_ID,
                 AdRequest.Builder().build(),
                 object : RewardedInterstitialAdLoadCallback() {
-                    override fun onAdLoaded(ad: RewardedInterstitialAd) { rewardedInterstitialAd = ad }
-                    override fun onAdFailedToLoad(err: LoadAdError) { rewardedInterstitialAd = null }
+                    override fun onAdLoaded(ad: RewardedInterstitialAd) {
+                        rewardedInterstitialAd = ad
+                        Log.d("AdMob", "RewardedInterstitial loaded")
+                    }
+                    override fun onAdFailedToLoad(err: LoadAdError) {
+                        rewardedInterstitialAd = null
+                        Log.w("AdMob", "RewardedInterstitial failed: ${err.code} ${err.message}")
+                    }
                 }
             )
         } catch (_: Throwable) {}
@@ -214,12 +283,20 @@ class BillingAdsManager(
         container.removeAllViews()
         if (adsRemoved) return
         try {
-            val adView = AdView(context).apply {
+            val adView = cachedBannerView ?: AdView(context).apply {
                 setAdSize(AdSize.BANNER)
                 adUnitId = BANNER_AD_ID
-            }
-            container.addView(adView)
-            adView.loadAd(AdRequest.Builder().build())
+                adListener = object : com.google.android.gms.ads.AdListener() {
+                    override fun onAdLoaded() { Log.d("AdMob", "Banner loaded") }
+                    override fun onAdFailedToLoad(err: LoadAdError) {
+                        Log.w("AdMob", "Banner failed: ${err.code} ${err.message}")
+                    }
+                }
+                loadAd(AdRequest.Builder().build())
+            }.also { cachedBannerView = it }
+
+            (adView.parent as? ViewGroup)?.removeView(adView)
+            container.addView(adView, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
         } catch (_: Throwable) {}
     }
 

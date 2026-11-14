@@ -8,11 +8,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Outline
+import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -87,8 +92,14 @@ class MainActivity : ComponentActivity() {
 
     private var originalBitmap: Bitmap? = null
     private var cutoutBitmap: Bitmap? = null
+    private val editHistory = ArrayList<Bitmap>()
     private var bgRemoved = false
     private var isProcessingBg = false
+    private var isColorPickMode = false
+    private var pickedColor: Int? = null
+    private var colorTolerance = 38
+    private var pickedTouchX = -1f
+    private var pickedTouchY = -1f
     private var opacityPercent = 80
     private var brightnessPercent = 80
 
@@ -641,14 +652,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openEditorWithBitmap(bmp: Bitmap) {
-        originalBitmap = bmp; cutoutBitmap = null; bgRemoved = false; brightnessPercent = 80; opacityPercent = 80
+        originalBitmap = bmp
+        cutoutBitmap = null
+        editHistory.clear()
+        bgRemoved = false
+        isColorPickMode = false
+        pickedColor = null
+        pickedTouchX = -1f
+        pickedTouchY = -1f
+        brightnessPercent = 80
+        opacityPercent = 80
         showFlow(Flow.EDITOR)
     }
 
+    private fun createCheckerDrawable(): BitmapDrawable {
+        val tile = dp(10).coerceAtLeast(8)
+        val bmp = Bitmap.createBitmap(tile * 2, tile * 2, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val light = Paint().apply { color = Color.parseColor(if (UiTheme.isDark) "#1E293B" else "#F1F5F9") }
+        val dark = Paint().apply { color = Color.parseColor(if (UiTheme.isDark) "#334155" else "#CBD5E1") }
+        c.drawRect(0f, 0f, (tile * 2).toFloat(), (tile * 2).toFloat(), light)
+        c.drawRect(0f, 0f, tile.toFloat(), tile.toFloat(), dark)
+        c.drawRect(tile.toFloat(), tile.toFloat(), (tile * 2).toFloat(), (tile * 2).toFloat(), dark)
+        return BitmapDrawable(resources, bmp).apply {
+            setTileModeXY(Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
     private fun renderEditor() {
         root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(36), dp(18), dp(24)) }
-        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
         topRow.addView(Button(this).apply {
             text = "←"; setTextColor(UiTheme.textMain); background = UiTheme.round(this@MainActivity, UiTheme.surface, 14, UiTheme.stroke)
             UiTheme.bounce(this) { showFlow(Flow.MAIN) }
@@ -656,36 +691,257 @@ class MainActivity : ComponentActivity() {
         topRow.addView(TextView(this).apply { text = L.t("drawing_create"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
         col.addView(topRow)
 
+        val previewFrame = FrameLayout(this).apply {
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 20, UiTheme.stroke)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            elevation = dp(3).toFloat()
+        }
+        val checkerBox = FrameLayout(this).apply {
+            background = createCheckerDrawable()
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(14).toFloat()) }
+            }
+            clipToOutline = true
+        }
         val previewIv = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER; background = UiTheme.round(this@MainActivity, UiTheme.surface, 20, UiTheme.stroke)
-            setPadding(dp(10), dp(10), dp(10), dp(10)); elevation = dp(3).toFloat()
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        col.addView(previewIv, LinearLayout.LayoutParams(MATCH_PARENT, dp(270)).apply { bottomMargin = dp(16) })
+        val pickerRing = View(this).apply {
+            background = UiTheme.round(this@MainActivity, Color.TRANSPARENT, 14, Color.parseColor("#EF4444"))
+            visibility = View.GONE
+        }
+        checkerBox.addView(previewIv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        checkerBox.addView(pickerRing, FrameLayout.LayoutParams(dp(24), dp(24)))
+        previewFrame.addView(checkerBox, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        col.addView(previewFrame, LinearLayout.LayoutParams(MATCH_PARENT, dp(270)).apply { bottomMargin = dp(12) })
 
-        val bgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 15f; setTypeface(null, Typeface.BOLD); elevation = dp(3).toFloat() }
-        fun sync() {
-            previewIv.setImageBitmap(if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap)
-            previewIv.alpha = opacityPercent / 100f
-            bgBtn.text = when { isProcessingBg -> L.t("removing_bg"); bgRemoved -> "↩️  ${L.t("restore_orig")}"; else -> "✂️  ${L.t("remove_bg")}" }
-            bgBtn.background = UiTheme.grad(this, if (bgRemoved) "#F59E0B" else "#3B82F6", if (bgRemoved) "#D97706" else "#2563EB", 16)
+        fun activeEditBitmap(): Bitmap? = if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap
+
+        val autoBgBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
+        val keepLinesBtn = Button(this).apply { setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
+        val pickColorBtn = Button(this).apply { isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
+        val undoBtn = Button(this).apply { isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD); elevation = dp(2).toFloat() }
+
+        val pickPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.accent)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            elevation = dp(3).toFloat()
         }
-        sync()
-        UiTheme.bounce(bgBtn) {
-            if (isProcessingBg) return@bounce
-            val orig = originalBitmap ?: return@bounce
-            if (bgRemoved) { bgRemoved = false; sync() }
-            else if (cutoutBitmap != null) { bgRemoved = true; sync() }
-            else {
-                isProcessingBg = true; sync()
-                ImageProcessor.removeBackgroundAsync(orig) { res -> runOnUiThread { isProcessingBg = false; cutoutBitmap = res; bgRemoved = true; sync() } }
+        val pickInfoRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val colorSwatch = TextView(this).apply {
+            text = "🎯"; textSize = 14f; gravity = Gravity.CENTER
+            background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 16, UiTheme.stroke)
+        }
+        val pickHintTv = TextView(this).apply {
+            textSize = 12f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain)
+        }
+        pickInfoRow.addView(colorSwatch, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) })
+        pickInfoRow.addView(pickHintTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        pickPanel.addView(pickInfoRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+        val tolLabel = TextView(this).apply {
+            text = "${L.t("tolerance")}: $colorTolerance%"
+            setTextColor(UiTheme.textSub); textSize = 12f
+        }
+        pickPanel.addView(tolLabel)
+        pickPanel.addView(SeekBar(this).apply {
+            max = 90; progress = colorTolerance
+            setOnSeekBarChangeListener(simpleSeek { p ->
+                colorTolerance = p.coerceAtLeast(8)
+                tolLabel.text = "${L.t("tolerance")}: $colorTolerance%"
+            })
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+        val pickActionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val removePickedBtn = Button(this).apply {
+            text = "🧹  ${L.t("remove_picked_color")}"
+            setTextColor(Color.WHITE); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD)
+            background = UiTheme.grad(this@MainActivity, "#EF4444", "#DC2626", 14)
+        }
+        val donePickBtn = Button(this).apply {
+            text = L.t("pick_done")
+            setTextColor(UiTheme.textMain); isAllCaps = false; textSize = 13f; setTypeface(null, Typeface.BOLD)
+            background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 14, UiTheme.stroke)
+        }
+        pickActionRow.addView(removePickedBtn, LinearLayout.LayoutParams(0, dp(42), 2f).apply { marginEnd = dp(8) })
+        pickActionRow.addView(donePickBtn, LinearLayout.LayoutParams(0, dp(42), 1f))
+        pickPanel.addView(pickActionRow)
+
+        fun sync() {
+            previewIv.setImageBitmap(activeEditBitmap())
+            previewIv.alpha = opacityPercent / 100f
+
+            autoBgBtn.text = if (isProcessingBg) L.t("removing_bg") else "✂️  ${L.t("remove_bg")}"
+            autoBgBtn.background = UiTheme.grad(this, "#3B82F6", "#2563EB", 14)
+
+            keepLinesBtn.text = if (isProcessingBg) L.t("removing_bg") else "🖋️  ${L.t("keep_lines")}"
+            keepLinesBtn.background = UiTheme.grad(this, "#8B5CF6", "#6D28D9", 14)
+
+            pickColorBtn.text = "🎯  ${L.t("pick_color_btn")}"
+            pickColorBtn.setTextColor(if (isColorPickMode) Color.WHITE else UiTheme.textMain)
+            pickColorBtn.background = if (isColorPickMode) {
+                UiTheme.grad(this, "#EC4899", "#DB2777", 14)
+            } else {
+                UiTheme.round(this, UiTheme.surface, 14, UiTheme.stroke)
+            }
+
+            val canRestore = bgRemoved && cutoutBitmap != null
+            undoBtn.text = if (editHistory.isNotEmpty()) "↩️  ${L.t("undo_step")}" else "🔄  ${L.t("restore_orig")}"
+            undoBtn.isEnabled = canRestore && !isProcessingBg
+            undoBtn.alpha = if (undoBtn.isEnabled) 1f else 0.45f
+            undoBtn.setTextColor(UiTheme.textMain)
+            undoBtn.background = UiTheme.round(this, UiTheme.surfaceAlt, 14, UiTheme.stroke)
+
+            pickPanel.visibility = if (isColorPickMode) View.VISIBLE else View.GONE
+            val pc = pickedColor
+            if (pc != null) {
+                colorSwatch.text = ""
+                colorSwatch.background = UiTheme.round(this, pc, 16, UiTheme.textMain)
+                pickHintTv.text = L.t("pick_color_ready")
+                removePickedBtn.isEnabled = !isProcessingBg
+                removePickedBtn.alpha = if (isProcessingBg) 0.5f else 1f
+            } else {
+                colorSwatch.text = "🎯"
+                colorSwatch.background = UiTheme.round(this, UiTheme.surfaceAlt, 16, UiTheme.stroke)
+                pickHintTv.text = L.t("pick_color_hint")
+                removePickedBtn.isEnabled = false
+                removePickedBtn.alpha = 0.5f
+            }
+
+            if (isColorPickMode && pickedTouchX >= 0f && pickedTouchY >= 0f) {
+                pickerRing.visibility = View.VISIBLE
+                pickerRing.translationX = pickedTouchX - dp(12)
+                pickerRing.translationY = pickedTouchY - dp(12)
+            } else {
+                pickerRing.visibility = View.GONE
             }
         }
-        col.addView(bgBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { bottomMargin = dp(14) })
-        col.addView(TextView(this).apply { text = "${L.t("opacity")}  $opacityPercent%"; setTextColor(UiTheme.textMain); textSize = 14f })
+
+        fun applyProcessed(newBmp: Bitmap) {
+            val prev = activeEditBitmap()
+            if (prev != null && bgRemoved) editHistory.add(prev)
+            cutoutBitmap = newBmp
+            bgRemoved = true
+            isProcessingBg = false
+            sync()
+        }
+
+        previewIv.setOnTouchListener { v, ev ->
+            if (!isColorPickMode) return@setOnTouchListener false
+            v.parent?.requestDisallowInterceptTouchEvent(true)
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN || ev.actionMasked == MotionEvent.ACTION_MOVE) {
+                val bmp = activeEditBitmap() ?: return@setOnTouchListener true
+                val inv = Matrix()
+                if (previewIv.imageMatrix.invert(inv)) {
+                    val pts = floatArrayOf(ev.x - previewIv.paddingLeft, ev.y - previewIv.paddingTop)
+                    inv.mapPoints(pts)
+                    val bx = pts[0].toInt()
+                    val by = pts[1].toInt()
+                    if (bx in 0 until bmp.width && by in 0 until bmp.height) {
+                        var sumR = 0; var sumG = 0; var sumB = 0; var cnt = 0
+                        for (dy in -1..1) {
+                            for (dx in -1..1) {
+                                val sx = (bx + dx).coerceIn(0, bmp.width - 1)
+                                val sy = (by + dy).coerceIn(0, bmp.height - 1)
+                                val c = bmp.getPixel(sx, sy)
+                                if (Color.alpha(c) > 40) {
+                                    sumR += Color.red(c); sumG += Color.green(c); sumB += Color.blue(c); cnt++
+                                }
+                            }
+                        }
+                        if (cnt > 0) {
+                            pickedColor = Color.rgb(sumR / cnt, sumG / cnt, sumB / cnt)
+                            pickedTouchX = ev.x.coerceIn(dp(12).toFloat(), (v.width - dp(12)).toFloat())
+                            pickedTouchY = ev.y.coerceIn(dp(12).toFloat(), (v.height - dp(12)).toFloat())
+                            sync()
+                        }
+                    }
+                }
+            }
+            true
+        }
+
+        UiTheme.bounce(autoBgBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            isProcessingBg = true; isColorPickMode = false; sync()
+            ImageProcessor.removeBackgroundAsync(cur) { res -> runOnUiThread { applyProcessed(res) } }
+        }
+
+        UiTheme.bounce(keepLinesBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            isProcessingBg = true; isColorPickMode = false; sync()
+            ImageProcessor.extractInkLinesAsync(cur, sensitivity = 58) { res -> runOnUiThread { applyProcessed(res) } }
+        }
+
+        UiTheme.bounce(pickColorBtn) {
+            if (isProcessingBg) return@bounce
+            isColorPickMode = !isColorPickMode
+            sync()
+        }
+
+        UiTheme.bounce(donePickBtn) {
+            isColorPickMode = false
+            sync()
+        }
+
+        UiTheme.bounce(removePickedBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            val target = pickedColor ?: return@bounce
+            isProcessingBg = true; sync()
+            ImageProcessor.removePickedColorAsync(cur, target, colorTolerance) { res ->
+                runOnUiThread {
+                    pickedColor = null
+                    pickedTouchX = -1f
+                    pickedTouchY = -1f
+                    applyProcessed(res)
+                }
+            }
+        }
+
+        UiTheme.bounce(undoBtn) {
+            if (isProcessingBg) return@bounce
+            if (editHistory.isNotEmpty()) {
+                cutoutBitmap = editHistory.removeAt(editHistory.size - 1)
+                bgRemoved = true
+            } else {
+                cutoutBitmap = null
+                bgRemoved = false
+            }
+            pickedColor = null
+            pickedTouchX = -1f
+            pickedTouchY = -1f
+            sync()
+        }
+
+        sync()
+
+        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row1.addView(autoBgBtn, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(8) })
+        row1.addView(keepLinesBtn, LinearLayout.LayoutParams(0, dp(46), 1f))
+        col.addView(row1, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+
+        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row2.addView(pickColorBtn, LinearLayout.LayoutParams(0, dp(44), 1.3f).apply { marginEnd = dp(8) })
+        row2.addView(undoBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
+        col.addView(row2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+        col.addView(pickPanel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+
+        val opLabel = TextView(this).apply { text = "${L.t("opacity")}  $opacityPercent%"; setTextColor(UiTheme.textMain); textSize = 14f }
+        col.addView(opLabel)
         col.addView(SeekBar(this).apply {
             max = 100; progress = opacityPercent
-            setOnSeekBarChangeListener(simpleSeek { p -> opacityPercent = p.coerceAtLeast(10); previewIv.alpha = opacityPercent / 100f })
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(18) })
+            setOnSeekBarChangeListener(simpleSeek { p ->
+                opacityPercent = p.coerceAtLeast(10)
+                opLabel.text = "${L.t("opacity")}  $opacityPercent%"
+                previewIv.alpha = opacityPercent / 100f
+            })
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
         col.addView(UiTabs.cuteBtn(this, "${L.t("next")}  →", "#10B981", "#059669", 54) {
             if (originalBitmap == null) Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
             else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showFlow(Flow.CAMERA)
