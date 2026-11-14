@@ -45,8 +45,8 @@ class PlaneTracker {
     private var anchor: Mat? = null
     private var aKp: MatOfKeyPoint? = null
     private var aDesc: Mat? = null
-    private val orb = ORB.create(500)
-    private val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
+    private val orb by lazy { ORB.create(500) }
+    private val matcher by lazy { DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING) }
 
     private val rawH = DoubleArray(9)
     private val outH = FloatArray(9)
