@@ -200,8 +200,8 @@ class MainActivity : ComponentActivity() {
         }
         logoCard.addView(logoIv, FrameLayout.LayoutParams(dp(128), dp(128)))
         centerCol.addView(logoCard)
-        centerCol.addView(TextView(this).apply { text = "Advance Drawing Studio"; textSize = 26f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); setPadding(0, dp(18), 0, dp(4)) })
-        centerCol.addView(TextView(this).apply { text = "AR Sketch & Trace Studio"; textSize = 13f; setTextColor(UiTheme.textSub) })
+        centerCol.addView(TextView(this).apply { text = L.t("app"); textSize = 26f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain); setPadding(0, dp(18), 0, dp(4)) })
+        centerCol.addView(TextView(this).apply { text = L.t("splash_sub"); textSize = 13f; setTextColor(UiTheme.textSub) })
         centerCol.scaleX = 0.8f; centerCol.scaleY = 0.8f; centerCol.alpha = 0f
         centerCol.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(480).start()
 
@@ -209,7 +209,7 @@ class MainActivity : ComponentActivity() {
         val pctTv = TextView(this).apply { text = "${L.t("loading")}... 1%"; textSize = 13f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.accent); setPadding(0, 0, 0, dp(8)) }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 1 }
         bottomCol.addView(pctTv); bottomCol.addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, dp(8)))
-        bottomCol.addView(TextView(this).apply { text = "This action may contain Ads"; textSize = 12f; setTextColor(UiTheme.textSub); setPadding(0, dp(10), 0, 0) })
+        bottomCol.addView(TextView(this).apply { text = L.t("ad_notice"); textSize = 12f; setTextColor(UiTheme.textSub); setPadding(0, dp(10), 0, 0) })
 
         wrap.addView(centerCol, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
         wrap.addView(bottomCol, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
@@ -255,7 +255,7 @@ class MainActivity : ComponentActivity() {
         }
         topBar.addView(TextView(this).apply {
             text = when (currentTab) {
-                Tab.HOME -> "Advance Drawing Studio"; Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
+                Tab.HOME -> L.t("app"); Tab.GALLERY -> L.t("my_activity"); Tab.STORE -> L.t("store_title"); Tab.SETTINGS -> L.t("settings")
             }
             textSize = 19f; setTypeface(null, Typeface.BOLD); setTextColor(if (currentTab == Tab.HOME) UiTheme.accent else UiTheme.textMain)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -341,7 +341,7 @@ class MainActivity : ComponentActivity() {
         main.addView(topRow)
 
         val searchBox = EditText(this).apply {
-            hint = "Type letter to filter ${selectedSeries.name} characters..."
+            hint = L.t("filter_chars_hint").replace("{name}", selectedSeries.name)
             setTextColor(UiTheme.textMain); setHintTextColor(UiTheme.textSub)
             background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, UiTheme.accent)
             setPadding(dp(14), dp(12), dp(14), dp(12)); setSingleLine(true)
@@ -363,7 +363,7 @@ class MainActivity : ComponentActivity() {
                     setPadding(dp(14), dp(14), dp(14), dp(14)); elevation = dp(2).toFloat()
                     addView(TextView(this@MainActivity).apply { text = "🎨  $ch"; textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) },
                         LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                    addView(TextView(this@MainActivity).apply { text = "Search ›"; textSize = 13f; setTextColor(UiTheme.accent) })
+                    addView(TextView(this@MainActivity).apply { text = L.t("search_btn"); textSize = 13f; setTextColor(UiTheme.accent) })
                     UiTheme.bounce(this) {
                         browserQuery = "$ch ${selectedSeries.name} easy line drawing"
                         showFlow(Flow.BROWSER)
@@ -416,7 +416,7 @@ class MainActivity : ComponentActivity() {
         col.addView(topBar)
 
         col.addView(TextView(this).apply {
-            text = "Bing Images • Tap any photo to auto-save & start drawing"; textSize = 12f; gravity = Gravity.CENTER
+            text = L.t("bing_banner"); textSize = 12f; gravity = Gravity.CENTER
             setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#1E40AF")); setPadding(0, dp(5), 0, dp(5))
         })
 
@@ -486,7 +486,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun saveOnlineImageAndDraw(fullUrl: String, thumbUrl: String) {
-        runOnUiThread { Toast.makeText(this, "Saving image...", Toast.LENGTH_SHORT).show() }
+        runOnUiThread { Toast.makeText(this, L.t("saving_image"), Toast.LENGTH_SHORT).show() }
         ioExecutor.execute {
             val bmp = decodeRemoteImage(fullUrl) ?: decodeRemoteImage(thumbUrl)
             if (bmp != null) {
@@ -637,8 +637,9 @@ class MainActivity : ComponentActivity() {
 
     private fun renderLanguagePage() {
         root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(36), dp(16), dp(24)) }
-        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        val main = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(36), dp(16), dp(16)) }
+
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
         topRow.addView(Button(this).apply {
             text = "←"
             textSize = 17f
@@ -646,25 +647,82 @@ class MainActivity : ComponentActivity() {
             UiTheme.styleSoftBtn(this@MainActivity, this, 14, UiTheme.surface, UiTheme.stroke, UiTheme.textMain)
             UiTheme.bounce(this) { showFlow(Flow.MAIN) }
         }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
-        topRow.addView(TextView(this).apply { text = L.t("language"); textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
-        col.addView(topRow)
+        topRow.addView(TextView(this).apply {
+            text = L.t("language")
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.textMain)
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        topRow.addView(TextView(this).apply {
+            text = "${L.languages.size}"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(UiTheme.accent)
+            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 12, UiTheme.stroke)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        })
+        main.addView(topRow)
 
-        L.languages.forEach { info ->
-            val sel = L.lang == info.code
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, if (sel) UiTheme.accent else UiTheme.stroke)
-                setPadding(dp(16), dp(14), dp(16), dp(14)); elevation = dp(2).toFloat()
-                val tc = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-                tc.addView(TextView(this@MainActivity).apply { text = info.label; textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain) })
-                tc.addView(TextView(this@MainActivity).apply { text = info.sub; textSize = 12f; setTextColor(UiTheme.textSub) })
-                addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                if (sel) addView(TextView(this@MainActivity).apply { text = "✓"; textSize = 18f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.accent) })
-                UiTheme.bounce(this) { L.lang = info.code; prefs.edit().putString("lang", info.code).apply(); showFlow(Flow.MAIN) }
-            }
-            col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+        val searchBox = EditText(this).apply {
+            hint = "🔎  ${L.t("language")}..."
+            setTextColor(UiTheme.textMain)
+            setHintTextColor(UiTheme.textSub)
+            textSize = 14f
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, UiTheme.stroke)
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+            setSingleLine(true)
         }
-        root.addView(ScrollView(this).apply { addView(col) }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        main.addView(searchBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+
+        val listCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        fun fillLanguages(filter: String) {
+            listCol.removeAllViews()
+            val q = filter.trim().lowercase()
+            val matches = if (q.isEmpty()) L.languages
+            else L.languages.filter {
+                it.label.lowercase().contains(q) || it.sub.lowercase().contains(q) || it.code.lowercase().contains(q)
+            }
+            matches.forEach { info ->
+                val sel = L.lang == info.code
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, if (sel) UiTheme.accent else UiTheme.stroke, if (sel) 2 else 1)
+                    setPadding(dp(14), dp(13), dp(16), dp(13)); elevation = dp(2).toFloat()
+                    addView(TextView(this@MainActivity).apply {
+                        text = info.flag
+                        textSize = 22f
+                        gravity = Gravity.CENTER
+                        background = UiTheme.round(this@MainActivity, UiTheme.surfaceAlt, 12)
+                    }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) })
+                    val tc = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+                    tc.addView(TextView(this@MainActivity).apply {
+                        text = info.label; textSize = 15f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.textMain)
+                    })
+                    tc.addView(TextView(this@MainActivity).apply {
+                        text = info.sub; textSize = 12f; setTextColor(UiTheme.textSub)
+                    })
+                    addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                    if (sel) addView(TextView(this@MainActivity).apply {
+                        text = "✓"; textSize = 18f; setTypeface(null, Typeface.BOLD); setTextColor(UiTheme.accent)
+                    })
+                    UiTheme.bounce(this) {
+                        L.lang = info.code
+                        prefs.edit().putString("lang", info.code).apply()
+                        showFlow(Flow.MAIN)
+                    }
+                }
+                listCol.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+            }
+        }
+        fillLanguages("")
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) { fillLanguages(s?.toString() ?: "") }
+        })
+
+        main.addView(ScrollView(this).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        root.addView(main, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
     private fun renderPrivacyPage() {
@@ -1075,7 +1133,7 @@ class MainActivity : ComponentActivity() {
             }
         })
         topPill.addView(pillIcon("✓") {
-            saveToGallery(activeBmp, "Art"); stopCamera()
+            saveToGallery(activeBmp, L.t("art_prefix")); stopCamera()
             billingAds.showRewardedOnComplete(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
         })
 

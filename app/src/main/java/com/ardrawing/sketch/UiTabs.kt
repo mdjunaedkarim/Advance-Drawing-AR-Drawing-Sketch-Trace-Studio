@@ -109,7 +109,7 @@ object UiTabs {
             setSingleLine(true)
         }
         val goBtn = Button(act).apply {
-            text = "Web"
+            text = L.t("web_btn")
             textSize = 12.5f
             setTypeface(null, Typeface.BOLD)
             UiTheme.styleGradientBtn(act, this, "#0EA5E9", "#2563EB", 15)
@@ -135,7 +135,7 @@ object UiTabs {
 
                 // 1) In-App Built-in Templates Match (instant launch inside app!)
                 val localHits = Samples.items.filter {
-                    it.title.lowercase().contains(q) || it.cat.title.lowercase().contains(q)
+                    it.title.lowercase().contains(q) || it.cat.label().lowercase().contains(q) || it.cat.name.lowercase().contains(q)
                 }.take(5)
                 localHits.forEach { sample ->
                     val row = LinearLayout(act).apply {
@@ -145,8 +145,8 @@ object UiTabs {
                         setPadding(dp(10), dp(8), dp(12), dp(8))
                         elevation = dp(2).toFloat()
                         val thumb = ImageView(act).apply {
-                            setImageBitmap(Samples.renderThumb(sample.id, 120))
-                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            Samples.loadThumb(act, sample, 120)?.let { setImageBitmap(it) }
+                            scaleType = ImageView.ScaleType.FIT_CENTER
                             setBackgroundColor(Color.WHITE)
                             clipRounded(this, dp(8).toFloat())
                         }
@@ -159,7 +159,7 @@ object UiTabs {
                             setTextColor(UiTheme.textMain)
                         })
                         tc.addView(TextView(act).apply {
-                            text = "${sample.cat.title} • Built-in"
+                            text = "${sample.cat.label()} • ${L.t("collection_tag")}"
                             textSize = 11f
                             setTextColor(UiTheme.textSub)
                         })
@@ -172,7 +172,7 @@ object UiTabs {
                             background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 10)
                             setPadding(dp(10), dp(5), dp(10), dp(5))
                         })
-                        UiTheme.bounce(this) { onSampleClick(Samples.render(sample.id, 1080)) }
+                        UiTheme.bounce(this) { Samples.loadFull(act, sample)?.let(onSampleClick) }
                     }
                     suggestCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
                 }
@@ -233,7 +233,7 @@ object UiTabs {
         })
         heroTopRow.addView(View(act), LinearLayout.LayoutParams(0, 1, 1f))
         heroTopRow.addView(TextView(act).apply {
-            text = "${Samples.items.size} Sketches Ready"
+            text = L.t("sketches_ready").replace("{n}", Samples.items.size.toString())
             textSize = 11f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#EDE9FE"))
@@ -301,7 +301,7 @@ object UiTabs {
         Samples.Cat.values().forEach { cat ->
             val active = selectedCat == cat
             val chip = TextView(act).apply {
-                text = cat.title
+                text = cat.label()
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(if (active) Color.WHITE else UiTheme.textMain)
@@ -324,9 +324,9 @@ object UiTabs {
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
         )
 
-        // In-App Ready-to-Trace Built-in Sketches Grid
+        // User-Curated Ready-to-Trace Sketches Grid
         val builtInList = if (selectedCat == Samples.Cat.ALL) {
-            listOf(0, 1, 14, 22, 27, 30, 35, 43, 46, 48).mapNotNull { id -> Samples.items.find { it.id == id } }
+            Samples.items
         } else {
             Samples.items.filter { it.cat == selectedCat }
         }
@@ -339,7 +339,7 @@ object UiTabs {
                     sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                     col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
                 }
-                val thumbBmp = Samples.renderThumb(item.id, 260)
+                val thumbBmp = Samples.loadThumb(act, item, 420)
                 val sCard = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
                     background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
@@ -354,7 +354,7 @@ object UiTabs {
                             scaleType = ImageView.ScaleType.FIT_CENTER
                         }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
                         addView(TextView(act).apply {
-                            text = item.cat.title
+                            text = item.cat.label()
                             textSize = 9.5f
                             setTypeface(null, Typeface.BOLD)
                             setTextColor(UiTheme.accent)
@@ -362,7 +362,7 @@ object UiTabs {
                             setPadding(dp(7), dp(2), dp(7), dp(2))
                         }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
                     }
-                    addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW - dp(38)))
+                    addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
 
                     val footRow = LinearLayout(act).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -385,7 +385,7 @@ object UiTabs {
                         setPadding(dp(8), dp(4), dp(8), dp(4))
                     })
                     addView(footRow)
-                    UiTheme.bounce(this) { onSampleClick(Samples.render(item.id, 1080)) }
+                    UiTheme.bounce(this) { Samples.loadFull(act, item)?.let(onSampleClick) }
                 }
                 sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
                     if (idx % 2 == 0) marginEnd = dp(12)
@@ -393,49 +393,10 @@ object UiTabs {
             }
         }
 
-        // Offline Assets (if present in assets/)
-        val assetFolder = when {
-            selectedCat == Samples.Cat.ANIME || selectedCat == Samples.Cat.ALL -> "anime/naruto"
-            selectedCat.assetFolder.isNotEmpty() -> selectedCat.assetFolder
-            else -> ""
-        }
-        val assetPaths = Samples.listAssetPaths(act, assetFolder)
-        if (assetPaths.isNotEmpty()) {
-            var gridRow: LinearLayout? = null
-            assetPaths.forEachIndexed { idx, path ->
-                if (idx % 2 == 0) {
-                    gridRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-                    col.addView(gridRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
-                }
-                val bmp = Samples.loadAssetBitmap(act, path, 480)
-                val title = path.substringAfterLast("/").substringBeforeLast(".")
-                val card = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = UiTheme.round(act, Color.WHITE, 18, UiTheme.stroke)
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    elevation = dp(3).toFloat()
-                    addView(ImageView(act).apply {
-                        setImageBitmap(bmp)
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                    }, LinearLayout.LayoutParams(MATCH_PARENT, cardW - dp(36)))
-                    addView(TextView(act).apply {
-                        text = title
-                        textSize = 12f
-                        setTypeface(null, Typeface.BOLD)
-                        gravity = Gravity.CENTER
-                        setTextColor(Color.parseColor("#1E1B4B"))
-                        maxLines = 1
-                    })
-                    UiTheme.bounce(this) { Samples.loadAssetBitmap(act, path, 1080)?.let(onSampleClick) }
-                }
-                gridRow?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
-            }
-        }
-
         // 20 Anime Series Grid
         if (selectedCat == Samples.Cat.ALL || selectedCat == Samples.Cat.ANIME) {
             col.addView(TextView(act).apply {
-                text = "🔥  20 Popular Anime Worlds"
+                text = "🔥  ${L.t("anime_worlds")}"
                 textSize = 17f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(UiTheme.textMain)
@@ -460,7 +421,7 @@ object UiTabs {
                         maxLines = 1
                     })
                     addView(TextView(act).apply {
-                        text = "${series.characters.size} Characters  ›"
+                        text = L.t("characters_count").replace("{n}", series.characters.size.toString())
                         textSize = 11.5f
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(UiTheme.accent)
@@ -475,7 +436,7 @@ object UiTabs {
             val topics = extraTopics[selectedCat] ?: emptyList()
             if (topics.isNotEmpty()) {
                 col.addView(TextView(act).apply {
-                    text = "🌐  Explore More ${selectedCat.title} Ideas"
+                    text = "🌐  ${L.t("explore_more_ideas")} (${selectedCat.label()})"
                     textSize = 16f
                     setTypeface(null, Typeface.BOLD)
                     setTextColor(UiTheme.textMain)
@@ -495,7 +456,7 @@ object UiTabs {
                             setTextColor(UiTheme.textMain)
                         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                         addView(TextView(act).apply {
-                            text = "Browse ›"
+                            text = L.t("browse_btn")
                             textSize = 12f
                             setTypeface(null, Typeface.BOLD)
                             setTextColor(UiTheme.accent)
@@ -584,7 +545,7 @@ object UiTabs {
                 col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
             }
             val bmp = BitmapFactory.decodeFile(file.absolutePath)
-            val savedName = prefs.getString("gname_${file.name}", "Art #${files.size - idx}") ?: "Art"
+            val savedName = prefs.getString("gname_${file.name}", "${L.t("art_prefix")} #${files.size - idx}") ?: L.t("art_prefix")
             val isSel = selectedFiles.contains(file.name)
             val card = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL
@@ -831,7 +792,7 @@ object UiTabs {
                             maxLines = 1
                         })
                         addView(TextView(act).apply {
-                            text = pack.title
+                            text = L.t("coin_pack_sub").replace("{n}", pack.coins.toString())
                             textSize = 12f
                             setTextColor(UiTheme.textSub)
                             maxLines = 1
@@ -940,7 +901,7 @@ object UiTabs {
                     elevation = dp(6).toFloat()
 
                     addView(TextView(act).apply {
-                        text = "👑  LIFETIME VIP"
+                        text = "👑  ${L.t("lifetime_vip")}"
                         textSize = 11f
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(Color.parseColor("#1E1B4B"))
@@ -1008,7 +969,7 @@ object UiTabs {
                 background = UiTheme.round(act, UiTheme.accentSoft, 14)
             }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) })
             addView(TextView(act).apply {
-                text = if (UiTheme.isDark) "Dark Studio Mode" else "Light Studio Mode"
+                text = if (UiTheme.isDark) L.t("dark_mode") else L.t("light_mode")
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(UiTheme.textMain)
@@ -1053,7 +1014,7 @@ object UiTabs {
             col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
         }
 
-        val cur = L.languages.find { it.code == L.lang }?.let { "${it.label} (${it.sub})" } ?: "English"
+        val cur = L.languages.find { it.code == L.lang }?.let { "${it.flag} ${it.label} (${it.sub})" } ?: "🇺🇸 English"
         addSetting("🌐", "${L.t("language")}: $cur", onOpenLanguagePage)
         addSetting("🔒", L.t("privacy_policy")) {
             if (L.PRIVACY_URL.startsWith("http")) {
