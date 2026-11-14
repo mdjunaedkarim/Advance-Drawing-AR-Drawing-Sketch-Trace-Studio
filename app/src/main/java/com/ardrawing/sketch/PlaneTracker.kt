@@ -10,6 +10,7 @@ import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfDMatch
 import org.opencv.core.MatOfFloat
 import org.opencv.core.MatOfKeyPoint
+import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Size
@@ -213,7 +214,7 @@ class PlaneTracker {
     }
 
     private fun trackFlow(prevFrame: Mat, cur: Mat): Boolean {
-        val corners = MatOfPoint2f()
+        val corners = MatOfPoint()
         val p0 = MatOfPoint2f()
         val p1 = MatOfPoint2f()
         val st = MatOfByte()
@@ -297,40 +298,3 @@ class PlaneTracker {
             var maxDelta = 0.0
             for (i in 0..3) {
                 val d = hypot(target[i].x - prevSm[i].x, target[i].y - prevSm[i].y)
-                if (d > maxDelta) maxDelta = d
-            }
-            if (maxDelta < 2.2) return
-
-            val alpha = if (maxDelta > 18.0) 0.55 else 0.28
-            for (i in 0..3) {
-                prevSm[i] = Point(
-                    prevSm[i].x + (target[i].x - prevSm[i].x) * alpha,
-                    prevSm[i].y + (target[i].y - prevSm[i].y) * alpha
-                )
-            }
-        }
-
-        val src4 = MatOfPoint2f(Point(0.0, 0.0), Point(w, 0.0), Point(w, h), Point(0.0, h))
-        val dst4 = MatOfPoint2f(*smoothCorners!!)
-        val smMat = Imgproc.getPerspectiveTransform(src4, dst4)
-        val d = DoubleArray(9)
-        smMat.get(0, 0, d)
-        for (i in 0 until 9) outH[i] = d[i].toFloat()
-        src4.release(); dst4.release(); smMat.release()
-    }
-
-    private fun transformPt(hd: DoubleArray, x: Double, y: Double): Point {
-        val denom = hd[6] * x + hd[7] * y + hd[8]
-        val safe = if (abs(denom) < 1e-6) 1e-6 else denom
-        return Point((hd[0] * x + hd[1] * y + hd[2]) / safe, (hd[3] * x + hd[4] * y + hd[5]) / safe)
-    }
-
-    private fun polygonArea(p: Array<Point>): Double {
-        var sum = 0.0
-        for (i in 0..3) {
-            val j = (i + 1) % 4
-            sum += p[i].x * p[j].y - p[j].x * p[i].y
-        }
-        return sum * 0.5
-    }
-}
