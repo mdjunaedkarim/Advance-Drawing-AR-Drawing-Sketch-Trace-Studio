@@ -23,15 +23,33 @@ object Samples {
         val id: Int,
         val title: String,
         val cat: Cat,
-        val assetPath: String
+        val assetPath: String,
+        val series: String = ""
     )
 
-    // User's curated sketch photos (added serial by serial)
+    // User's curated sketch photos organized by Anime / Category name
     val items = listOf(
-        Item(0, "Naruto Uzumaki", Cat.ANIME, "anime/naruto_uzumaki.jpg")
+        // Naruto
+        Item(0, "Naruto Uzumaki", Cat.ANIME, "anime/naruto_uzumaki.jpg", "Naruto"),
+        Item(1, "Naruto Standing Scroll", Cat.ANIME, "anime/naruto_scroll.jpg", "Naruto"),
+        Item(2, "Naruto Tree Branch", Cat.ANIME, "anime/naruto_tree_branch.jpg", "Naruto"),
+        Item(3, "Naruto Eating Ramen", Cat.ANIME, "anime/naruto_ramen.jpg", "Naruto"),
+        Item(4, "Naruto Arms Crossed", Cat.ANIME, "anime/naruto_arms_crossed.jpg", "Naruto"),
+        Item(5, "Naruto Chakra Mode", Cat.ANIME, "anime/naruto_chakra_mode.jpg", "Naruto"),
+        Item(6, "Naruto on Giant Toad", Cat.ANIME, "anime/naruto_giant_toad.jpg", "Naruto"),
+        Item(7, "Naruto Smiling", Cat.ANIME, "anime/naruto_smiling.jpg", "Naruto"),
+        Item(8, "Naruto Six Paths Mode", Cat.ANIME, "anime/naruto_six_paths.jpg", "Naruto"),
+        Item(9, "Naruto Kunai Dash", Cat.ANIME, "anime/naruto_kunai_dash.jpg", "Naruto"),
+        Item(10, "Naruto Battle Stance", Cat.ANIME, "anime/naruto_battle_stance.jpg", "Naruto"),
+        Item(11, "Naruto Sage Mode", Cat.ANIME, "anime/naruto_sage_mode.jpg", "Naruto"),
+        Item(12, "Naruto Portrait", Cat.ANIME, "anime/naruto_portrait.jpg", "Naruto"),
+        Item(13, "Naruto Rasengan", Cat.ANIME, "anime/naruto_rasengan.jpg", "Naruto")
     )
 
-    private val thumbCache = LruCache<Int, Bitmap>(48)
+    fun bySeries(seriesName: String): List<Item> =
+        items.filter { it.series.equals(seriesName, ignoreCase = true) }
+
+    private val thumbCache = LruCache<Int, Bitmap>(96)
 
     fun loadThumb(ctx: Context, item: Item, size: Int = 360): Bitmap? {
         thumbCache.get(item.id)?.let { return it }

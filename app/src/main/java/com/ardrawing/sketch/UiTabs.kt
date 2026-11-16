@@ -135,8 +135,11 @@ object UiTabs {
 
                 // 1) In-App Built-in Templates Match (instant launch inside app!)
                 val localHits = Samples.items.filter {
-                    it.title.lowercase().contains(q) || it.cat.label().lowercase().contains(q) || it.cat.name.lowercase().contains(q)
-                }.take(5)
+                    it.title.lowercase().contains(q) ||
+                        it.series.lowercase().contains(q) ||
+                        it.cat.label().lowercase().contains(q) ||
+                        it.cat.name.lowercase().contains(q)
+                }.take(8)
                 localHits.forEach { sample ->
                     val row = LinearLayout(act).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -159,7 +162,8 @@ object UiTabs {
                             setTextColor(UiTheme.textMain)
                         })
                         tc.addView(TextView(act).apply {
-                            text = "${sample.cat.label()} • ${L.t("collection_tag")}"
+                            val subTag = if (sample.series.isNotEmpty()) "${sample.series} • ${sample.cat.label()}" else "${sample.cat.label()} • ${L.t("collection_tag")}"
+                            text = subTag
                             textSize = 11f
                             setTextColor(UiTheme.textSub)
                         })
@@ -333,63 +337,87 @@ object UiTabs {
 
         val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
         if (builtInList.isNotEmpty()) {
-            var sRow: LinearLayout? = null
-            builtInList.forEachIndexed { idx, item ->
-                if (idx % 2 == 0) {
-                    sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-                    col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
-                }
-                val thumbBmp = Samples.loadThumb(act, item, 420)
-                val sCard = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
-                    setPadding(dp(8), dp(8), dp(8), dp(10))
-                    elevation = dp(4).toFloat()
-
-                    val imgBox = FrameLayout(act).apply {
-                        background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
-                        setPadding(dp(6), dp(6), dp(6), dp(6))
-                        addView(ImageView(act).apply {
-                            setImageBitmap(thumbBmp)
-                            scaleType = ImageView.ScaleType.FIT_CENTER
-                        }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-                        addView(TextView(act).apply {
-                            text = item.cat.label()
-                            textSize = 9.5f
-                            setTypeface(null, Typeface.BOLD)
-                            setTextColor(UiTheme.accent)
-                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
-                            setPadding(dp(7), dp(2), dp(7), dp(2))
-                        }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
-                    }
-                    addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
-
-                    val footRow = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        setPadding(dp(2), dp(8), dp(2), 0)
-                    }
-                    footRow.addView(TextView(act).apply {
-                        text = item.title
-                        textSize = 13f
+            val grouped = builtInList.groupBy { it.series.ifEmpty { it.cat.label() } }
+            grouped.forEach { (groupName, groupItems) ->
+                val groupHeader = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(4), 0, dp(8))
+                    addView(TextView(act).apply {
+                        text = "🎬  $groupName"
+                        textSize = 15.5f
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(UiTheme.textMain)
-                        maxLines = 1
-                    }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-                    footRow.addView(TextView(act).apply {
-                        text = "${L.t("trace_now")} →"
-                        textSize = 10.5f
+                    }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                    addView(TextView(act).apply {
+                        text = "${groupItems.size}"
+                        textSize = 11.5f
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(Color.WHITE)
                         background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 10)
-                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                        setPadding(dp(9), dp(3), dp(9), dp(3))
                     })
-                    addView(footRow)
-                    UiTheme.bounce(this) { Samples.loadFull(act, item)?.let(onSampleClick) }
                 }
-                sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
-                    if (idx % 2 == 0) marginEnd = dp(12)
-                })
+                col.addView(groupHeader)
+
+                var sRow: LinearLayout? = null
+                groupItems.forEachIndexed { idx, item ->
+                    if (idx % 2 == 0) {
+                        sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                        col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+                    }
+                    val thumbBmp = Samples.loadThumb(act, item, 420)
+                    val sCard = LinearLayout(act).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+                        setPadding(dp(8), dp(8), dp(8), dp(10))
+                        elevation = dp(4).toFloat()
+
+                        val imgBox = FrameLayout(act).apply {
+                            background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
+                            setPadding(dp(6), dp(6), dp(6), dp(6))
+                            addView(ImageView(act).apply {
+                                setImageBitmap(thumbBmp)
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                            addView(TextView(act).apply {
+                                text = item.series.ifEmpty { item.cat.label() }
+                                textSize = 9.5f
+                                setTypeface(null, Typeface.BOLD)
+                                setTextColor(UiTheme.accent)
+                                background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                                setPadding(dp(7), dp(2), dp(7), dp(2))
+                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+                        }
+                        addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
+
+                        val footRow = LinearLayout(act).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(dp(2), dp(8), dp(2), 0)
+                        }
+                        footRow.addView(TextView(act).apply {
+                            text = item.title
+                            textSize = 12.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                            maxLines = 1
+                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+                        footRow.addView(TextView(act).apply {
+                            text = "${L.t("trace_now")} →"
+                            textSize = 10.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, "#8B5CF6", "#6D28D9", 10)
+                            setPadding(dp(8), dp(4), dp(8), dp(4))
+                        })
+                        addView(footRow)
+                        UiTheme.bounce(this) { Samples.loadFull(act, item)?.let(onSampleClick) }
+                    }
+                    sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                        if (idx % 2 == 0) marginEnd = dp(12)
+                    })
+                }
             }
         }
 
@@ -408,9 +436,15 @@ object UiTabs {
                     aRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                     col.addView(aRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
                 }
+                val bundledCount = Samples.bySeries(series.name).size
                 val aCard = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 18, UiTheme.stroke)
+                    background = UiTheme.round(
+                        act,
+                        UiTheme.surface,
+                        18,
+                        if (bundledCount > 0) UiTheme.accent else UiTheme.stroke
+                    )
                     setPadding(dp(12), dp(14), dp(12), dp(14))
                     elevation = dp(3).toFloat()
                     addView(TextView(act).apply {
@@ -420,14 +454,29 @@ object UiTabs {
                         setTextColor(UiTheme.textMain)
                         maxLines = 1
                     })
-                    addView(TextView(act).apply {
+                    val badgesRow = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    if (bundledCount > 0) {
+                        badgesRow.addView(TextView(act).apply {
+                            text = "🎨 $bundledCount"
+                            textSize = 11f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, "#10B981", "#059669", 8)
+                            setPadding(dp(7), dp(3), dp(7), dp(3))
+                        }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(6) })
+                    }
+                    badgesRow.addView(TextView(act).apply {
                         text = L.t("characters_count").replace("{n}", series.characters.size.toString())
-                        textSize = 11.5f
+                        textSize = 11f
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(UiTheme.accent)
                         background = UiTheme.round(act, UiTheme.accentSoft, 8)
                         setPadding(dp(8), dp(3), dp(8), dp(3))
-                    }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(8) })
+                    })
+                    addView(badgesRow, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(8) })
                     UiTheme.bounce(this) { onOpenAnime(series) }
                 }
                 aRow?.addView(aCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })

@@ -55,6 +55,9 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
@@ -349,9 +352,83 @@ class MainActivity : ComponentActivity() {
         main.addView(searchBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
         val listCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val cardW = (resources.displayMetrics.widthPixels - dp(44)) / 2
+        val seriesSketches = Samples.bySeries(selectedSeries.name)
         fun fill(filter: String) {
             listCol.removeAllViews()
             val q = filter.trim().lowercase()
+
+            val matchedSketches = if (q.isEmpty()) seriesSketches
+            else seriesSketches.filter { it.title.lowercase().contains(q) }
+
+            if (matchedSketches.isNotEmpty()) {
+                listCol.addView(TextView(this).apply {
+                    text = L.t("sketches_ready").replace("{n}", matchedSketches.size.toString())
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(UiTheme.textMain)
+                    setPadding(0, 0, 0, dp(10))
+                })
+                var sRow: LinearLayout? = null
+                matchedSketches.forEachIndexed { idx, item ->
+                    if (idx % 2 == 0) {
+                        sRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        listCol.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+                    }
+                    val thumbBmp = Samples.loadThumb(this, item, 420)
+                    val sCard = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+                        setPadding(dp(8), dp(8), dp(8), dp(10))
+                        elevation = dp(4).toFloat()
+
+                        val imgBox = FrameLayout(this@MainActivity).apply {
+                            background = UiTheme.round(this@MainActivity, Color.WHITE, 14, UiTheme.stroke)
+                            setPadding(dp(6), dp(6), dp(6), dp(6))
+                            addView(ImageView(this@MainActivity).apply {
+                                setImageBitmap(thumbBmp)
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                            addView(TextView(this@MainActivity).apply {
+                                text = selectedSeries.name
+                                textSize = 9.5f
+                                setTypeface(null, Typeface.BOLD)
+                                setTextColor(UiTheme.accent)
+                                background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 8)
+                                setPadding(dp(7), dp(2), dp(7), dp(2))
+                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+                        }
+                        addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
+
+                        val footRow = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(dp(2), dp(8), dp(2), 0)
+                        }
+                        footRow.addView(TextView(this@MainActivity).apply {
+                            text = item.title
+                            textSize = 12.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(UiTheme.textMain)
+                            maxLines = 1
+                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+                        footRow.addView(TextView(this@MainActivity).apply {
+                            text = "${L.t("trace_now")} →"
+                            textSize = 10.5f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(this@MainActivity, "#8B5CF6", "#6D28D9", 10)
+                            setPadding(dp(8), dp(4), dp(8), dp(4))
+                        })
+                        addView(footRow)
+                        UiTheme.bounce(this) { Samples.loadFull(this@MainActivity, item)?.let { openEditorWithBitmap(it) } }
+                    }
+                    sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                        if (idx % 2 == 0) marginEnd = dp(12)
+                    })
+                }
+            }
+
             val chars = if (q.isEmpty()) selectedSeries.characters
             else selectedSeries.characters.filter { it.lowercase().startsWith(q) } +
                 selectedSeries.characters.filter { !it.lowercase().startsWith(q) && it.lowercase().contains(q) }
@@ -1226,22 +1303,49 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCamera(previewView: PreviewView) {
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener({
-            try {
-                val provider = future.get(); cameraProvider = provider
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-                analysis.setAnalyzer(analysisExecutor) { image ->
-                    try {
-                        val out = tracker.process(image); val ov = overlayView
-                        if (ov != null && ov.isLocked) runOnUiThread { ov.updateTracking(out); cameraHintView?.text = if (out.good) L.t("hint_locked") else L.t("hint_lost") }
-                    } finally { image.close() }
-                }
-                provider.unbindAll()
-                boundCamera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-            } catch (_: Exception) { Toast.makeText(this, L.t("camera_error"), Toast.LENGTH_LONG).show() }
-        }, ContextCompat.getMainExecutor(this))
+        previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
+        previewView.post {
+            if (flow != Flow.CAMERA || isFinishing || isDestroyed) return@post
+            val future = ProcessCameraProvider.getInstance(this)
+            future.addListener({
+                try {
+                    if (flow != Flow.CAMERA || isFinishing || isDestroyed) return@addListener
+                    val provider = future.get(); cameraProvider = provider
+                    val resSelector = ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                        .build()
+                    val preview = Preview.Builder()
+                        .setResolutionSelector(resSelector)
+                        .build()
+                        .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                    val analysis = ImageAnalysis.Builder()
+                        .setResolutionSelector(resSelector)
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                    analysis.setAnalyzer(analysisExecutor) { image ->
+                        try {
+                            val out = tracker.process(image); val ov = overlayView
+                            if (ov != null && ov.isLocked) runOnUiThread {
+                                ov.updateTracking(out)
+                                cameraHintView?.text = if (out.good) L.t("hint_locked") else L.t("hint_lost")
+                            }
+                        } finally { image.close() }
+                    }
+                    provider.unbindAll()
+                    val vp = previewView.viewPort
+                    boundCamera = if (vp != null) {
+                        val group = UseCaseGroup.Builder()
+                            .setViewPort(vp)
+                            .addUseCase(preview)
+                            .addUseCase(analysis)
+                            .build()
+                        provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, group)
+                    } else {
+                        provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    }
+                } catch (_: Exception) { Toast.makeText(this, L.t("camera_error"), Toast.LENGTH_LONG).show() }
+            }, ContextCompat.getMainExecutor(this))
+        }
     }
 
     private fun stopCamera() {
