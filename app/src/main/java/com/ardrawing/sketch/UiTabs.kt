@@ -14,6 +14,8 @@ import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -23,11 +25,13 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.animation.OvershootInterpolator
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -92,6 +96,7 @@ object UiTabs {
         onSampleClick: (Bitmap) -> Unit,
         onBrowseOnline: (String) -> Unit,
         onOpenAnime: (AnimeCatalog.Series) -> Unit,
+        onOpenCharacterGallery: (character: String, series: String) -> Unit,
         onRefresh: () -> Unit
     ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
@@ -120,6 +125,7 @@ object UiTabs {
             textSize = 13.5f
             background = null
             setSingleLine(true)
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
         }
         val goBtn = StudioIcons.iconPill(
             context = act,
@@ -133,8 +139,9 @@ object UiTabs {
             background = UiTheme.grad(act, "#0EA5E9", "#2563EB", 14)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             UiTheme.bounce(this) {
-                val q = searchInput.text.toString().trim()
-                onBrowseOnline(if (q.isEmpty()) "Anime easy line drawing" else "$q easy line drawing")
+                val raw = searchInput.text.toString().trim()
+                val norm = AnimeCatalog.normalizeQuery(raw).trim()
+                onBrowseOnline(if (norm.isEmpty()) "Anime black and white sketch drawing" else "$norm black and white sketch drawing")
             }
         }
         searchBoxWrap.addView(searchInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -144,87 +151,251 @@ object UiTabs {
         val suggestCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(suggestCol, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
+        val searchHandler = Handler(Looper.getMainLooper())
+        var pendingSearchRunnable: Runnable? = null
+        var activeQueryToken = 0
+
+        fun addMorePhotosButton(targetQuery: String) {
+            val clean = targetQuery.trim().ifEmpty { "Anime" }
+            val moreBtn = LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                background = UiTheme.grad(act, "#0EA5E9", "#2563EB", 15)
+                setPadding(dp(14), dp(11), dp(14), dp(11))
+                elevation = dp(4).toFloat()
+                addView(
+                    StudioIcons.imageView(act, StudioIcons.Type.GLOBE, 16, Color.WHITE),
+                    LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) }
+                )
+                addView(TextView(act).apply {
+                    text = L.t("more_photos")
+                    textSize = 13.5f
+                    UiTheme.applyDisplayFont(this, bold = true)
+                    setTextColor(Color.WHITE)
+                })
+                addView(
+                    StudioIcons.imageView(act, StudioIcons.Type.ARROW_RIGHT, 14, Color.WHITE),
+                    LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginStart = dp(8) }
+                )
+                UiTheme.bounce(this) {
+                    onBrowseOnline("$clean black and white sketch drawing")
+                }
+            }
+            suggestCol.addView(moreBtn, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(2)
+                bottomMargin = dp(10)
+            })
+        }
+
+        fun addSketchResultRow(item: SketchSearchRepository.SketchResult, seriesLabel: String = "") {
+            val row = LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.accentBright)
+                setPadding(dp(10), dp(8), dp(12), dp(8))
+                elevation = dp(3).toFloat()
+
+                val thumbFrame = FrameLayout(act).apply {
+                    background = UiTheme.round(act, Color.WHITE, 10, UiTheme.stroke)
+                    setPadding(dp(3), dp(3), dp(3), dp(3))
+                    val thumb = ImageView(act).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        clipRounded(this, dp(8).toFloat())
+                    }
+                    addView(thumb, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                    val loadBar = ProgressBar(act).apply { isIndeterminate = true }
+                    addView(loadBar, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
+                    SketchSearchRepository.loadThumbBitmap(act, item) { bmp ->
+                        loadBar.visibility = View.GONE
+                        if (bmp != null) thumb.setImageBitmap(bmp)
+                    }
+                }
+                addView(thumbFrame, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
+
+                val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+                tc.addView(TextView(act).apply {
+                    text = item.title
+                    textSize = 13.5f
+                    UiTheme.applyDisplayFont(this, bold = true)
+                    setTextColor(UiTheme.textMain)
+                    maxLines = 1
+                })
+                val subRow = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(2), 0, 0)
+                }
+                subRow.addView(TextView(act).apply {
+                    text = item.mood
+                    textSize = 10f
+                    UiTheme.applyUiFont(this, bold = true)
+                    setTextColor(UiTheme.accentBright)
+                    background = UiTheme.round(act, UiTheme.accentSoft, 6)
+                    setPadding(dp(6), dp(1), dp(6), dp(1))
+                }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(6) })
+                val seriesText = item.localSample?.series?.ifEmpty { item.localSample.cat.label() }
+                    ?: seriesLabel.ifEmpty { "B&W Sketch" }
+                subRow.addView(TextView(act).apply {
+                    text = seriesText
+                    textSize = 11f
+                    UiTheme.applyUiFont(this)
+                    setTextColor(UiTheme.textSub)
+                    maxLines = 1
+                })
+                tc.addView(subRow)
+                addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+                addView(buildTracePill(act))
+
+                UiTheme.bounce(this) {
+                    val local = item.localSample
+                    if (local != null) {
+                        Samples.loadFull(act, local)?.let(onSampleClick)
+                    } else {
+                        Toast.makeText(act, L.t("saving_image"), Toast.LENGTH_SHORT).show()
+                        SketchSearchRepository.loadFullForEditor(act, item) { bmp ->
+                            if (bmp != null) onSampleClick(bmp)
+                            else Toast.makeText(act, L.t("no_sketches_found"), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            suggestCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+        }
+
+        fun addCatalogChips(hits: List<Pair<String, String>>) {
+            hits.take(3).forEach { (ch, anime) ->
+                val item = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.stroke)
+                    setPadding(dp(12), dp(9), dp(12), dp(9))
+                    val well = FrameLayout(act).apply {
+                        background = UiTheme.round(act, UiTheme.accentSoft, 9)
+                        addView(
+                            StudioIcons.imageView(act, StudioIcons.Type.ANIME_STAR, 15, UiTheme.accentBright),
+                            FrameLayout.LayoutParams(dp(15), dp(15), Gravity.CENTER)
+                        )
+                    }
+                    addView(well, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(10) })
+                    addView(TextView(act).apply {
+                        text = ch
+                        textSize = 13.5f
+                        UiTheme.applyUiFont(this, bold = true)
+                        setTextColor(UiTheme.textMain)
+                    }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                    addView(TextView(act).apply {
+                        text = anime
+                        textSize = 11f
+                        UiTheme.applyUiFont(this, bold = true)
+                        setTextColor(UiTheme.accentBright)
+                        background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                    })
+                    UiTheme.bounce(this) { onOpenCharacterGallery(ch, anime) }
+                }
+                suggestCol.addView(item, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(5) })
+            }
+        }
+
+        searchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                val raw = searchInput.text.toString().trim()
+                val norm = AnimeCatalog.normalizeQuery(raw).trim()
+                if (norm.isNotEmpty()) {
+                    val topHit = AnimeCatalog.searchAll(norm).firstOrNull()
+                    onOpenCharacterGallery(topHit?.first ?: norm, topHit?.second ?: "")
+                }
+                true
+            } else false
+        }
+
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) {
+                pendingSearchRunnable?.let { searchHandler.removeCallbacks(it) }
+                val token = ++activeQueryToken
                 suggestCol.removeAllViews()
-                val q = s?.toString()?.trim()?.lowercase() ?: ""
-                if (q.isEmpty()) return
 
-                val localHits = Samples.items.filter {
-                    it.title.lowercase().contains(q) ||
-                        it.series.lowercase().contains(q) ||
-                        it.cat.label().lowercase().contains(q) ||
-                        it.cat.name.lowercase().contains(q)
-                }.take(8)
-                localHits.forEach { sample ->
-                    val row = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.accentBright)
-                        setPadding(dp(10), dp(8), dp(12), dp(8))
-                        elevation = dp(3).toFloat()
-                        val thumb = ImageView(act).apply {
-                            Samples.loadThumb(act, sample, 120)?.let { setImageBitmap(it) }
-                            scaleType = ImageView.ScaleType.FIT_CENTER
-                            setBackgroundColor(Color.WHITE)
-                            clipRounded(this, dp(9).toFloat())
-                        }
-                        addView(thumb, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(10) })
-                        val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-                        tc.addView(TextView(act).apply {
-                            text = sample.title
-                            textSize = 14f
-                            UiTheme.applyDisplayFont(this, bold = true)
-                            setTextColor(UiTheme.textMain)
-                        })
-                        tc.addView(TextView(act).apply {
-                            text = if (sample.series.isNotEmpty()) "${sample.series} • ${sample.cat.label()}" else "${sample.cat.label()} • ${L.t("collection_tag")}"
-                            textSize = 11f
-                            UiTheme.applyUiFont(this)
-                            setTextColor(UiTheme.textSub)
-                        })
-                        addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                        addView(buildTracePill(act))
-                        UiTheme.bounce(this) { Samples.loadFull(act, sample)?.let(onSampleClick) }
+                val rawQ = s?.toString()?.trim() ?: ""
+                if (rawQ.isEmpty()) return
+
+                val normQ = AnimeCatalog.normalizeQuery(rawQ).trim()
+                val q = normQ.lowercase()
+                val catHits = AnimeCatalog.searchAll(normQ)
+
+                val directHits = Samples.items.filter {
+                    it.character.lowercase().contains(q) ||
+                        it.title.lowercase().contains(q)
+                }
+                val prioritizedLocal = directHits
+                    .filter { it.character.lowercase().startsWith(q) }
+                    .ifEmpty { directHits }
+                    .ifEmpty {
+                        Samples.items.filter {
+                            it.series.lowercase().contains(q) ||
+                                it.cat.label().lowercase().contains(q) ||
+                                it.cat.name.lowercase().contains(q)
+                        }.distinctBy { it.character.ifEmpty { it.id.toString() } }
                     }
-                    suggestCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+
+                if (prioritizedLocal.isNotEmpty()) {
+                    val fiveLocal = SketchSearchRepository.pickDiverseLocalFive(prioritizedLocal)
+                    fiveLocal.forEach { addSketchResultRow(it) }
+                    val targetMore = catHits.firstOrNull()?.let { "${it.first} ${it.second}" }
+                        ?: prioritizedLocal.firstOrNull()?.character?.ifEmpty { normQ }
+                        ?: normQ
+                    addMorePhotosButton(targetMore)
+                    val remainingCatalog = catHits.filter { (ch, _) ->
+                        !ch.equals(prioritizedLocal.firstOrNull()?.character, ignoreCase = true)
+                    }
+                    addCatalogChips(remainingCatalog)
+                    return
                 }
 
-                val hits = AnimeCatalog.searchAll(q).take(6)
-                hits.forEach { (ch, anime) ->
-                    val item = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.stroke)
-                        setPadding(dp(12), dp(10), dp(12), dp(10))
-                        val well = FrameLayout(act).apply {
-                            background = UiTheme.round(act, UiTheme.accentSoft, 9)
-                            addView(
-                                StudioIcons.imageView(act, StudioIcons.Type.GLOBE, 15, UiTheme.accentBright),
-                                FrameLayout.LayoutParams(dp(15), dp(15), Gravity.CENTER)
-                            )
-                        }
-                        addView(well, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(10) })
-                        addView(TextView(act).apply {
-                            text = ch
-                            textSize = 14f
-                            UiTheme.applyUiFont(this, bold = true)
-                            setTextColor(UiTheme.textMain)
-                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                        addView(TextView(act).apply {
-                            text = anime
-                            textSize = 11f
-                            UiTheme.applyUiFont(this, bold = true)
-                            setTextColor(UiTheme.accentBright)
-                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
-                            setPadding(dp(8), dp(4), dp(8), dp(4))
-                        })
-                        UiTheme.bounce(this) { onBrowseOnline("$ch $anime easy line drawing") }
-                    }
-                    suggestCol.addView(item, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(5) })
+                // Auto-search strictly 5 B&W sketches from web for any anime character or topic
+                val targetChar = catHits.firstOrNull()?.first ?: normQ
+                val targetSeries = catHits.firstOrNull()?.second ?: ""
+
+                addCatalogChips(catHits)
+                val loadingRow = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    addView(ProgressBar(act).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(10) })
+                    addView(TextView(act).apply {
+                        text = L.t("searching_sketches")
+                        textSize = 13f
+                        UiTheme.applyUiFont(this, bold = true)
+                        setTextColor(UiTheme.textSub)
+                    })
                 }
+                suggestCol.addView(loadingRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+                addMorePhotosButton(if (targetSeries.isNotEmpty()) "$targetChar $targetSeries" else targetChar)
+
+                val runnable = Runnable {
+                    SketchSearchRepository.getFiveSketches(targetChar, targetSeries) { results ->
+                        if (token != activeQueryToken) return@getFiveSketches
+                        suggestCol.removeAllViews()
+                        addCatalogChips(catHits)
+                        if (results.isEmpty()) {
+                            suggestCol.addView(TextView(act).apply {
+                                text = L.t("no_sketches_found")
+                                textSize = 12.5f
+                                UiTheme.applyUiFont(this)
+                                setTextColor(UiTheme.textSub)
+                                background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.stroke)
+                                setPadding(dp(12), dp(10), dp(12), dp(10))
+                            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
+                        } else {
+                            results.take(5).forEach { addSketchResultRow(it, targetSeries) }
+                        }
+                        addMorePhotosButton(if (targetSeries.isNotEmpty()) "$targetChar $targetSeries" else targetChar)
+                    }
+                }
+                pendingSearchRunnable = runnable
+                searchHandler.postDelayed(runnable, 380)
             }
         })
 
@@ -452,10 +623,13 @@ object UiTabs {
             Samples.items.filter { it.cat == selectedCat }
         }
 
-        // Featured Horizontal Spotlight Carousel
+        // Featured Horizontal Spotlight Carousel (1 flagship pose per top viral character)
         if ((selectedCat == Samples.Cat.ALL || selectedCat == Samples.Cat.ANIME) && builtInList.size > 3) {
             val spotRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-            builtInList.take(6).forEach { sample ->
+            val spotlightItems = builtInList
+                .distinctBy { it.character.ifEmpty { it.id.toString() } }
+                .take(10)
+            spotlightItems.forEach { sample ->
                 val thumbBmp = Samples.loadThumb(act, sample, 320)
                 val spotCard = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
@@ -480,7 +654,7 @@ object UiTabs {
                     }
                     addView(imgFrame, LinearLayout.LayoutParams(MATCH_PARENT, dp(122)))
                     addView(TextView(act).apply {
-                        text = sample.title
+                        text = sample.character.ifEmpty { sample.title }
                         textSize = 12.5f
                         UiTheme.applyDisplayFont(this, bold = true)
                         setTextColor(UiTheme.textMain)
@@ -501,11 +675,14 @@ object UiTabs {
             )
         }
 
-        // Grouped Built-in Sketches Grid
+        // Grouped Built-in Viral Character Showcase Grid (1 card per hero -> opens 5 sketches)
         val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
         if (builtInList.isNotEmpty()) {
             val grouped = builtInList.groupBy { it.series.ifEmpty { it.cat.label() } }
             grouped.forEach { (groupName, groupItems) ->
+                val heroShowcase = groupItems
+                    .distinctBy { it.character.ifEmpty { it.id.toString() } }
+                    .take(10)
                 val groupHeader = UiTheme.sectionHeader(
                     act = act,
                     icon = StudioIcons.Type.SPARK,
@@ -517,12 +694,14 @@ object UiTabs {
                 col.addView(groupHeader)
 
                 var sRow: LinearLayout? = null
-                groupItems.forEachIndexed { idx, item ->
+                heroShowcase.forEachIndexed { idx, item ->
                     if (idx % 2 == 0) {
                         sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                         col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
                     }
-                    val thumbBmp = Samples.loadThumb(act, item, 420)
+                    val thumbBmp = Samples.loadThumb(act, item, 360)
+                    val charName = item.character.ifEmpty { item.title }
+                    val charCount = Samples.byCharacter(charName, item.series).size.coerceAtLeast(1)
                     val sCard = LinearLayout(act).apply {
                         orientation = LinearLayout.VERTICAL
                         background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
@@ -544,6 +723,15 @@ object UiTabs {
                                 background = UiTheme.round(act, UiTheme.accentSoft, 8)
                                 setPadding(dp(7), dp(2), dp(7), dp(2))
                             }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+                            addView(TextView(act).apply {
+                                text = "$charCount"
+                                fontFeatureSettings = "tnum"
+                                textSize = 10f
+                                UiTheme.applyDisplayFont(this, bold = true)
+                                setTextColor(Color.WHITE)
+                                background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 8)
+                                setPadding(dp(7), dp(2), dp(7), dp(2))
+                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
                         }
                         addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
 
@@ -553,7 +741,7 @@ object UiTabs {
                             setPadding(dp(2), dp(8), dp(2), 0)
                         }
                         footRow.addView(TextView(act).apply {
-                            text = item.title
+                            text = charName
                             textSize = 12.5f
                             UiTheme.applyDisplayFont(this, bold = true)
                             setTextColor(UiTheme.textMain)
@@ -561,7 +749,13 @@ object UiTabs {
                         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
                         footRow.addView(buildTracePill(act))
                         addView(footRow)
-                        UiTheme.bounce(this) { Samples.loadFull(act, item)?.let(onSampleClick) }
+                        UiTheme.bounce(this) {
+                            if (item.character.isNotEmpty()) {
+                                onOpenCharacterGallery(item.character, item.series)
+                            } else {
+                                Samples.loadFull(act, item)?.let(onSampleClick)
+                            }
+                        }
                     }
                     sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
                         if (idx % 2 == 0) marginEnd = dp(12)

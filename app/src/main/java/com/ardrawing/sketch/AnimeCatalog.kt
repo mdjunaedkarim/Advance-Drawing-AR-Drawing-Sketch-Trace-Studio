@@ -30,18 +30,112 @@ object AnimeCatalog {
         s("Haikyuu", "Shoyo Hinata,Tobio Kageyama,Daichi Sawamura,Koshi Sugawara,Asahi Azumane,Yu Nishinoya,Ryunosuke Tanaka,Kei Tsukishima,Tadashi Yamaguchi,Toru Oikawa,Hajime Iwaizumi,Kenma Kozume,Tetsuro Kuroo,Kotaro Bokuto,Keiji Akaashi,Wakatoshi Ushijima,Satori Tendo,Atsumu Miya,Osamu Miya,Shinsuke Kita")
     )
 
+    private val aliases = mapOf(
+        "নারুতো" to "naruto",
+        "নারুটো" to "naruto",
+        "সাসুকে" to "sasuke",
+        "সাস্কে" to "sasuke",
+        "সাসেক" to "sasuke",
+        "সাকুরা" to "sakura",
+        "কাকাশি" to "kakashi",
+        "কাকাসি" to "kakashi",
+        "ইতাচি" to "itachi",
+        "হিনাতা" to "hinata",
+        "হিনাটা" to "hinata",
+        "হিনটা" to "hinata",
+        "মিনাতো" to "minato",
+        "জিরাইয়া" to "jiraiya",
+        "জিরাইয়া" to "jiraiya",
+        "মাস্টার জিরাইয়া" to "jiraiya",
+        "মাস্টার জিরাইয়া" to "jiraiya",
+        "master jiraiya" to "jiraiya",
+        "সুনাদে" to "tsunade",
+        "ওরোচিমারু" to "orochimaru",
+        "গারা" to "gaara",
+        "রক লি" to "rock lee",
+        "নেজি" to "neji",
+        "শিকামারু" to "shikamaru",
+        "মাদারা" to "madara",
+        "ওবিতো" to "obito",
+        "পেইন" to "pain",
+        "কুরামা" to "kurama",
+        "বোরুতো" to "boruto",
+        "তানজিরো" to "tanjiro",
+        "নেজুকো" to "nezuko",
+        "জেনিৎসু" to "zenitsu",
+        "ইনোসুকে" to "inosuke",
+        "গিউ" to "giyu",
+        "রেঙ্গোকু" to "rengoku",
+        "শিনোবু" to "shinobu",
+        "মুজান" to "muzan",
+        "ইউজু" to "yuji",
+        "মেগুমি" to "megumi",
+        "গোজো" to "gojo",
+        "সুকুনা" to "sukuna",
+        "লুফি" to "luffy",
+        "জোরো" to "zoro",
+        "নামি" to "nami",
+        "সানজি" to "sanji",
+        "শ্যাঙ্কস" to "shanks",
+        "এস" to "ace",
+        "গোকু" to "goku",
+        "ভেজিটা" to "vegeta",
+        "গোহান" to "gohan",
+        "পিকোলো" to "piccolo",
+        "ফ্রিজা" to "frieza",
+        "ব্রলি" to "broly",
+        "এরেন" to "eren",
+        "মিকাসা" to "mikasa",
+        "লেভি" to "levi",
+        "দেকু" to "deku",
+        "বাকুগো" to "bakugo",
+        "টোডোরোকি" to "todoroki",
+        "অল মাইট" to "all might",
+        "ডেনজি" to "denji",
+        "পাওয়ার" to "power",
+        "মাকিমা" to "makima",
+        "জিনউ" to "jinwoo",
+        "আনিয়া" to "anya",
+        "মাইকি" to "mikey",
+        "লাইট" to "light",
+        "ইচিগো" to "ichigo",
+        "রুকিয়া" to "rukia",
+        "গন" to "gon",
+        "কিলুয়া" to "killua",
+        "আস্তা" to "asta",
+        "ইসাগি" to "isagi",
+        "সাইতামা" to "saitama",
+        "জেনোস" to "genos",
+        "কানেকি" to "kaneki",
+        "এডওয়ার্ড" to "edward"
+    )
+
+    fun normalizeQuery(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        val low = t.lowercase()
+        aliases[low]?.let { return it }
+        aliases.forEach { (k, v) ->
+            if (low.contains(k)) return low.replace(k, v)
+        }
+        return t
+    }
+
     fun searchAll(query: String): List<Pair<String, String>> {
-        val q = query.trim().lowercase()
+        val q = normalizeQuery(query).trim().lowercase()
         if (q.isEmpty()) return emptyList()
         val starts = ArrayList<Pair<String, String>>()
         val contains = ArrayList<Pair<String, String>>()
+        val seriesMatches = ArrayList<Pair<String, String>>()
         list.forEach { series ->
+            val seriesHit = series.name.lowercase().contains(q)
             series.characters.forEach { ch ->
                 val low = ch.lowercase()
                 if (low.startsWith(q)) starts.add(ch to series.name)
                 else if (low.contains(q)) contains.add(ch to series.name)
+                else if (seriesHit) seriesMatches.add(ch to series.name)
             }
         }
-        return (starts + contains).take(30)
+        return (starts + contains + seriesMatches).distinctBy { it.first }.take(30)
     }
 }

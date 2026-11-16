@@ -81,7 +81,7 @@ import java.util.zip.ZipOutputStream
 class MainActivity : ComponentActivity() {
 
     private enum class Tab { HOME, GALLERY, STORE, SETTINGS }
-    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, BROWSER, EDITOR, CAMERA, CONGRATS }
+    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, CONGRATS }
 
     private var flow = Flow.SPLASH
     private var currentTab = Tab.HOME
@@ -109,7 +109,11 @@ class MainActivity : ComponentActivity() {
     private var brightnessPercent = 80
 
     private var selectedSeries: AnimeCatalog.Series = AnimeCatalog.list[0]
-    private var browserQuery = "Anime easy line drawing"
+    private var selectedCharacterName = ""
+    private var selectedCharacterSeries = ""
+    private var charGalleryReturnFlow = Flow.MAIN
+    private var browserReturnFlow = Flow.MAIN
+    private var browserQuery = "Anime black and white sketch drawing"
     private var activeWebView: WebView? = null
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -184,10 +188,11 @@ class MainActivity : ComponentActivity() {
                 when (flow) {
                     Flow.SPLASH -> {}
                     Flow.CAMERA -> { stopCamera(); showFlow(Flow.EDITOR) }
+                    Flow.CHAR_GALLERY -> showFlow(charGalleryReturnFlow)
                     Flow.BROWSER -> {
                         val wv = activeWebView
                         if (wv != null && wv.canGoBack()) wv.goBack()
-                        else { destroyWebView(); showFlow(Flow.MAIN) }
+                        else { destroyWebView(); showFlow(browserReturnFlow) }
                     }
                     Flow.ANIME_CHARS, Flow.LANG, Flow.PRIVACY, Flow.EDITOR, Flow.CONGRATS -> showFlow(Flow.MAIN)
                     Flow.MAIN -> if (currentTab != Tab.HOME) { currentTab = Tab.HOME; renderMain() } else finish()
@@ -296,6 +301,7 @@ class MainActivity : ComponentActivity() {
             Flow.LANG -> renderLanguagePage()
             Flow.PRIVACY -> renderPrivacyPage()
             Flow.ANIME_CHARS -> renderAnimeCharsPage()
+            Flow.CHAR_GALLERY -> renderCharacterGallery()
             Flow.BROWSER -> renderBrowser()
             Flow.EDITOR -> renderEditor()
             Flow.CAMERA -> renderCamera()
@@ -382,8 +388,14 @@ class MainActivity : ComponentActivity() {
                 { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") },
                 { currentTab = Tab.GALLERY; renderMain() },
                 { openEditorWithBitmap(it) },
-                { q -> browserQuery = q; showFlow(Flow.BROWSER) },
+                { q -> browserQuery = q; browserReturnFlow = Flow.MAIN; showFlow(Flow.BROWSER) },
                 { series -> selectedSeries = series; showFlow(Flow.ANIME_CHARS) },
+                { ch, series ->
+                    selectedCharacterName = ch
+                    selectedCharacterSeries = series
+                    charGalleryReturnFlow = Flow.MAIN
+                    showFlow(Flow.CHAR_GALLERY)
+                },
                 { renderMain() }
             )
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { showCuteImportPopup() }, { exportZipFiles(it) }, { openEditorWithBitmap(it) }, { renderMain() })
@@ -518,90 +530,10 @@ class MainActivity : ComponentActivity() {
         main.addView(searchWrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
         val listCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val cardW = (resources.displayMetrics.widthPixels - dp(44)) / 2
-        val seriesSketches = Samples.bySeries(selectedSeries.name)
 
         fun fill(filter: String) {
             listCol.removeAllViews()
-            val q = filter.trim().lowercase()
-
-            val matchedSketches = if (q.isEmpty()) seriesSketches
-            else seriesSketches.filter { it.title.lowercase().contains(q) }
-
-            if (matchedSketches.isNotEmpty()) {
-                listCol.addView(
-                    UiTheme.sectionHeader(
-                        act = this,
-                        icon = StudioIcons.Type.COLLECTION,
-                        title = L.t("sketches_ready").replace("{n}", matchedSketches.size.toString()),
-                        c1 = "#EC4899",
-                        c2 = "#DB2777"
-                    )
-                )
-                var sRow: LinearLayout? = null
-                matchedSketches.forEachIndexed { idx, item ->
-                    if (idx % 2 == 0) {
-                        sRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                        listCol.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
-                    }
-                    val thumbBmp = Samples.loadThumb(this, item, 420)
-                    val sCard = LinearLayout(this).apply {
-                        orientation = LinearLayout.VERTICAL
-                        background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
-                        setPadding(dp(8), dp(8), dp(8), dp(10))
-                        elevation = dp(4).toFloat()
-
-                        val imgBox = FrameLayout(this@MainActivity).apply {
-                            background = UiTheme.round(this@MainActivity, Color.WHITE, 14, UiTheme.stroke)
-                            setPadding(dp(6), dp(6), dp(6), dp(6))
-                            addView(ImageView(this@MainActivity).apply {
-                                setImageBitmap(thumbBmp)
-                                scaleType = ImageView.ScaleType.FIT_CENTER
-                            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-                            addView(TextView(this@MainActivity).apply {
-                                text = selectedSeries.name
-                                textSize = 9.5f
-                                setTypeface(null, Typeface.BOLD)
-                                setTextColor(UiTheme.accent)
-                                background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 8)
-                                setPadding(dp(7), dp(2), dp(7), dp(2))
-                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
-                        }
-                        addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
-
-                        val footRow = LinearLayout(this@MainActivity).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            gravity = Gravity.CENTER_VERTICAL
-                            setPadding(dp(2), dp(8), dp(2), 0)
-                        }
-                        footRow.addView(TextView(this@MainActivity).apply {
-                            text = item.title
-                            textSize = 12.5f
-                            setTypeface(null, Typeface.BOLD)
-                            setTextColor(UiTheme.textMain)
-                            maxLines = 1
-                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-                        val tracePill = StudioIcons.iconPill(
-                            context = this@MainActivity,
-                            iconType = StudioIcons.Type.ARROW_RIGHT,
-                            label = L.t("trace_now"),
-                            textColor = Color.WHITE,
-                            iconColor = Color.WHITE,
-                            iconSizeDp = 12,
-                            textSizeSp = 10.5f
-                        ).apply {
-                            background = UiTheme.grad(this@MainActivity, "#8B5CF6", "#6D28D9", 10)
-                            setPadding(dp(8), dp(4), dp(8), dp(4))
-                        }
-                        footRow.addView(tracePill)
-                        addView(footRow)
-                        UiTheme.bounce(this) { Samples.loadFull(this@MainActivity, item)?.let { openEditorWithBitmap(it) } }
-                    }
-                    sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
-                        if (idx % 2 == 0) marginEnd = dp(12)
-                    })
-                }
-            }
+            val q = AnimeCatalog.normalizeQuery(filter).trim().lowercase()
 
             val chars = if (q.isEmpty()) selectedSeries.characters
             else selectedSeries.characters.filter { it.lowercase().startsWith(q) } +
@@ -610,42 +542,133 @@ class MainActivity : ComponentActivity() {
             chars.forEachIndexed { cIdx, ch ->
                 val (c1, c2) = UiTheme.seriesPalette(cIdx)
                 val initials = ch.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("")
+                val bundled = Samples.byCharacter(ch, selectedSeries.name)
+                val thumbBmp = bundled.firstOrNull()?.let { Samples.loadThumb(this, it, 160) }
+
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, UiTheme.stroke)
-                    setPadding(dp(12), dp(11), dp(14), dp(11))
-                    elevation = dp(2).toFloat()
-                    addView(
-                        UiTheme.monogramBadge(this@MainActivity, initials.ifEmpty { "A" }, c1, c2, sizeDp = 36, rDp = 11, textSizeSp = 12f),
-                        LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(12) }
+                    background = UiTheme.round(
+                        this@MainActivity,
+                        UiTheme.surface,
+                        16,
+                        if (bundled.isNotEmpty()) UiTheme.accentBright else UiTheme.stroke
                     )
-                    addView(TextView(this@MainActivity).apply {
+                    setPadding(dp(12), dp(10), dp(14), dp(10))
+                    elevation = dp(3).toFloat()
+                    if (thumbBmp != null) {
+                        val thumbFrame = FrameLayout(this@MainActivity).apply {
+                            background = UiTheme.round(this@MainActivity, Color.WHITE, 11, UiTheme.stroke)
+                            setPadding(dp(3), dp(3), dp(3), dp(3))
+                            addView(ImageView(this@MainActivity).apply {
+                                setImageBitmap(thumbBmp)
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                        }
+                        addView(thumbFrame, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
+                    } else {
+                        addView(
+                            UiTheme.monogramBadge(this@MainActivity, initials.ifEmpty { "A" }, c1, c2, sizeDp = 40, rDp = 11, textSizeSp = 12.5f),
+                            LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) }
+                        )
+                    }
+                    val nameCol = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+                    nameCol.addView(TextView(this@MainActivity).apply {
                         text = ch
                         textSize = 14.5f
-                        setTypeface(null, Typeface.BOLD)
+                        UiTheme.applyDisplayFont(this, bold = true)
+                        setTextColor(UiTheme.textMain)
+                    })
+                    if (bundled.isNotEmpty()) {
+                        nameCol.addView(TextView(this@MainActivity).apply {
+                            text = "${bundled.size} ${L.t("sketches_ready").replace("{n}", bundled.size.toString()).substringAfter(" ")}"
+                            textSize = 11f
+                            UiTheme.applyUiFont(this, bold = true)
+                            setTextColor(UiTheme.accentBright)
+                        })
+                    }
+                    addView(nameCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+
+                    if (bundled.isNotEmpty()) {
+                        addView(
+                            StudioIcons.iconPill(
+                                context = this@MainActivity,
+                                iconType = StudioIcons.Type.ARROW_RIGHT,
+                                label = "${bundled.size}",
+                                textColor = Color.WHITE,
+                                iconColor = Color.WHITE,
+                                iconSizeDp = 12,
+                                textSizeSp = 12f
+                            ).apply {
+                                background = UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 10)
+                                setPadding(dp(11), dp(6), dp(11), dp(6))
+                            }
+                        )
+                    } else {
+                        addView(
+                            StudioIcons.iconPill(
+                                context = this@MainActivity,
+                                iconType = StudioIcons.Type.SEARCH,
+                                label = L.t("search_btn").replace("›", "").trim(),
+                                textColor = UiTheme.accentBright,
+                                iconColor = UiTheme.accentBright,
+                                iconSizeDp = 13,
+                                textSizeSp = 12f
+                            ).apply {
+                                background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10)
+                                setPadding(dp(9), dp(5), dp(9), dp(5))
+                            }
+                        )
+                    }
+                    UiTheme.bounce(this) {
+                        selectedCharacterName = ch
+                        selectedCharacterSeries = selectedSeries.name
+                        charGalleryReturnFlow = Flow.ANIME_CHARS
+                        showFlow(Flow.CHAR_GALLERY)
+                    }
+                }
+                listCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+            }
+
+            if (chars.isEmpty() && filter.trim().isNotEmpty()) {
+                val customChar = AnimeCatalog.normalizeQuery(filter.trim()).ifEmpty { filter.trim() }
+                val customRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, UiTheme.accentBright)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    addView(
+                        StudioIcons.imageView(this@MainActivity, StudioIcons.Type.SEARCH, 18, UiTheme.accentBright),
+                        LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(10) }
+                    )
+                    addView(TextView(this@MainActivity).apply {
+                        text = "$customChar • ${selectedSeries.name}"
+                        textSize = 14f
+                        UiTheme.applyDisplayFont(this, bold = true)
                         setTextColor(UiTheme.textMain)
                     }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                     addView(
                         StudioIcons.iconPill(
                             context = this@MainActivity,
-                            iconType = StudioIcons.Type.SEARCH,
-                            label = L.t("search_btn").replace("›", "").trim(),
-                            textColor = UiTheme.accentBright,
-                            iconColor = UiTheme.accentBright,
-                            iconSizeDp = 13,
-                            textSizeSp = 12f
+                            iconType = StudioIcons.Type.ARROW_RIGHT,
+                            label = "5",
+                            textColor = Color.WHITE,
+                            iconColor = Color.WHITE,
+                            iconSizeDp = 12,
+                            textSizeSp = 11f
                         ).apply {
-                            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10)
-                            setPadding(dp(9), dp(5), dp(9), dp(5))
+                            background = UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 10)
+                            setPadding(dp(10), dp(5), dp(10), dp(5))
                         }
                     )
                     UiTheme.bounce(this) {
-                        browserQuery = "$ch ${selectedSeries.name} easy line drawing"
-                        showFlow(Flow.BROWSER)
+                        selectedCharacterName = customChar
+                        selectedCharacterSeries = selectedSeries.name
+                        charGalleryReturnFlow = Flow.ANIME_CHARS
+                        showFlow(Flow.CHAR_GALLERY)
                     }
                 }
-                listCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+                listCol.addView(customRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
             }
         }
         fill("")
@@ -661,6 +684,332 @@ class MainActivity : ComponentActivity() {
             main.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(8))
         }
         ViewCompat.requestApplyInsets(root)
+    }
+
+    // ---------------- CHARACTER 5 B&W SKETCHES GALLERY + MORE PHOTOS ----------------
+    private fun renderCharacterGallery() {
+        updateSystemBarsAppearance(!UiTheme.isDark)
+        root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
+        val main = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(10))
+        }
+
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        topRow.addView(
+            UiTheme.studioIconBtn(
+                act = this,
+                icon = StudioIcons.Type.ARROW_LEFT,
+                sizeDp = 44,
+                iconSizeDp = 20,
+                fillColor = UiTheme.surface,
+                strokeColor = UiTheme.stroke,
+                iconTint = UiTheme.textMain,
+                contentDesc = L.t("back")
+            ) { showFlow(charGalleryReturnFlow) },
+            LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) }
+        )
+
+        val titleCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        titleCol.addView(TextView(this).apply {
+            text = selectedCharacterName.ifEmpty { "Anime Sketch" }
+            textSize = 18.5f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(UiTheme.textMain)
+            maxLines = 1
+        })
+        if (selectedCharacterSeries.isNotEmpty()) {
+            titleCol.addView(TextView(this).apply {
+                text = selectedCharacterSeries
+                textSize = 11.5f
+                UiTheme.applyUiFont(this, bold = true)
+                setTextColor(UiTheme.accentBright)
+                maxLines = 1
+            })
+        }
+        topRow.addView(titleCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+
+        topRow.addView(TextView(this).apply {
+            text = "5"
+            fontFeatureSettings = "tnum"
+            textSize = 12.5f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(UiTheme.accentBright)
+            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10, UiTheme.stroke)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
+
+        val bodyCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val cardW = (resources.displayMetrics.widthPixels - dp(44)) / 2
+
+        fun openMorePhotosBrowser() {
+            browserQuery = listOf(selectedCharacterName, selectedCharacterSeries, "black and white sketch drawing")
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+            browserReturnFlow = Flow.CHAR_GALLERY
+            showFlow(Flow.BROWSER)
+        }
+
+        fun buildMorePhotosBar(): View = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = UiTheme.grad(this@MainActivity, "#0EA5E9", "#2563EB", 18)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            elevation = dp(5).toFloat()
+            addView(
+                StudioIcons.imageView(this@MainActivity, StudioIcons.Type.GLOBE, 18, Color.WHITE),
+                LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(10) }
+            )
+            addView(TextView(this@MainActivity).apply {
+                text = L.t("more_photos")
+                textSize = 15f
+                UiTheme.applyDisplayFont(this, true)
+                setTextColor(Color.WHITE)
+            })
+            addView(
+                StudioIcons.imageView(this@MainActivity, StudioIcons.Type.ARROW_RIGHT, 16, Color.WHITE),
+                LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(10) }
+            )
+            UiTheme.bounce(this) { openMorePhotosBrowser() }
+        }
+
+        fun buildSketchCard(item: SketchSearchRepository.SketchResult, index: Int, fullWidth: Boolean): View {
+            val imgH = if (fullWidth) dp(215) else cardW + dp(16)
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+                setPadding(dp(8), dp(8), dp(8), dp(10))
+                elevation = dp(4).toFloat()
+
+                val imgBox = FrameLayout(this@MainActivity).apply {
+                    background = UiTheme.round(this@MainActivity, Color.WHITE, 14, UiTheme.stroke)
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    val iv = ImageView(this@MainActivity).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+
+                    val spinner = ProgressBar(this@MainActivity).apply { isIndeterminate = true }
+                    addView(spinner, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
+
+                    SketchSearchRepository.loadThumbBitmap(this@MainActivity, item) { bmp ->
+                        spinner.visibility = View.GONE
+                        if (bmp != null) iv.setImageBitmap(bmp)
+                    }
+
+                    addView(TextView(this@MainActivity).apply {
+                        text = item.mood
+                        textSize = 10f
+                        UiTheme.applyUiFont(this, bold = true)
+                        setTextColor(UiTheme.accentBright)
+                        background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 8)
+                        setPadding(dp(7), dp(2), dp(7), dp(2))
+                    }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+
+                    addView(TextView(this@MainActivity).apply {
+                        text = "#${index + 1}"
+                        fontFeatureSettings = "tnum"
+                        textSize = 10f
+                        UiTheme.applyDisplayFont(this, true)
+                        setTextColor(Color.WHITE)
+                        background = UiTheme.round(this@MainActivity, Color.parseColor("#B0111827"), 8)
+                        setPadding(dp(7), dp(2), dp(7), dp(2))
+                    }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
+                }
+                addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, imgH))
+
+                val footRow = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(3), dp(8), dp(3), 0)
+                }
+                footRow.addView(TextView(this@MainActivity).apply {
+                    text = if (item.localSample != null) item.title else "${item.title} • ${item.mood}"
+                    textSize = 12.5f
+                    UiTheme.applyDisplayFont(this, true)
+                    setTextColor(UiTheme.textMain)
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+
+                val tracePill = StudioIcons.iconPill(
+                    context = this@MainActivity,
+                    iconType = StudioIcons.Type.ARROW_RIGHT,
+                    label = L.t("trace_now"),
+                    textColor = Color.WHITE,
+                    iconColor = Color.WHITE,
+                    iconSizeDp = 12,
+                    textSizeSp = 10.5f
+                ).apply {
+                    background = UiTheme.grad(this@MainActivity, "#8B5CF6", "#6D28D9", 10)
+                    setPadding(dp(9), dp(4), dp(9), dp(4))
+                }
+                footRow.addView(tracePill)
+                addView(footRow)
+
+                var loadingClick = false
+                UiTheme.bounce(this) {
+                    if (loadingClick) return@bounce
+                    val local = item.localSample
+                    if (local != null) {
+                        Samples.loadFull(this@MainActivity, local)?.let { openEditorWithBitmap(it) }
+                    } else {
+                        loadingClick = true
+                        Toast.makeText(this@MainActivity, L.t("saving_image"), Toast.LENGTH_SHORT).show()
+                        SketchSearchRepository.loadFullForEditor(this@MainActivity, item) { bmp ->
+                            loadingClick = false
+                            if (isFinishing || isDestroyed) return@loadFullForEditor
+                            if (bmp != null) openEditorWithBitmap(bmp)
+                            else Toast.makeText(this@MainActivity, L.t("no_sketches_found"), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+
+        fun loadGallery(forceRefresh: Boolean) {
+            bodyCol.removeAllViews()
+            val loadingCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+                setPadding(dp(20), dp(34), dp(20), dp(34))
+                addView(ProgressBar(this@MainActivity).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { bottomMargin = dp(12) })
+                addView(TextView(this@MainActivity).apply {
+                    text = L.t("searching_sketches")
+                    textSize = 13.5f
+                    UiTheme.applyUiFont(this, bold = true)
+                    setTextColor(UiTheme.textSub)
+                    gravity = Gravity.CENTER
+                })
+            }
+            bodyCol.addView(loadingCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+            bodyCol.addView(buildMorePhotosBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
+            val targetChar = selectedCharacterName
+            val targetSeries = selectedCharacterSeries
+            SketchSearchRepository.getFiveSketches(targetChar, targetSeries, forceRefresh) { results ->
+                if (flow != Flow.CHAR_GALLERY || isFinishing || isDestroyed) return@getFiveSketches
+                if (selectedCharacterName != targetChar || selectedCharacterSeries != targetSeries) return@getFiveSketches
+                bodyCol.removeAllViews()
+
+                val topFive = results.take(5)
+                if (topFive.isEmpty()) {
+                    val emptyCard = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+                        setPadding(dp(20), dp(28), dp(20), dp(24))
+                        addView(TextView(this@MainActivity).apply {
+                            text = L.t("no_sketches_found")
+                            textSize = 13.5f
+                            UiTheme.applyUiFont(this)
+                            setTextColor(UiTheme.textSub)
+                            gravity = Gravity.CENTER
+                            setPadding(0, 0, 0, dp(14))
+                        })
+                        val retryBtn = StudioIcons.iconPill(
+                            context = this@MainActivity,
+                            iconType = StudioIcons.Type.RESTORE,
+                            label = L.t("retry_search"),
+                            textColor = Color.WHITE,
+                            iconColor = Color.WHITE,
+                            iconSizeDp = 14,
+                            textSizeSp = 13f
+                        ).apply {
+                            background = UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 12)
+                            setPadding(dp(16), dp(9), dp(16), dp(9))
+                            UiTheme.bounce(this) { loadGallery(forceRefresh = true) }
+                        }
+                        addView(retryBtn)
+                    }
+                    bodyCol.addView(emptyCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+                } else {
+                    val pairCount = (topFive.size / 2) * 2
+                    var idx = 0
+                    while (idx < pairCount) {
+                        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        row.addView(buildSketchCard(topFive[idx], idx, fullWidth = false), LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                            marginEnd = dp(12)
+                        })
+                        row.addView(buildSketchCard(topFive[idx + 1], idx + 1, fullWidth = false), LinearLayout.LayoutParams(cardW, WRAP_CONTENT))
+                        bodyCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+                        idx += 2
+                    }
+                    if (topFive.size % 2 == 1) {
+                        val lastIdx = topFive.size - 1
+                        bodyCol.addView(buildSketchCard(topFive[lastIdx], lastIdx, fullWidth = true), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                            bottomMargin = dp(14)
+                        })
+                    }
+                }
+
+                bodyCol.addView(buildMorePhotosBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                    topMargin = dp(2)
+                    bottomMargin = dp(18)
+                })
+            }
+        }
+
+        topRow.addView(
+            UiTheme.studioIconBtn(
+                act = this,
+                icon = StudioIcons.Type.RESTORE,
+                sizeDp = 42,
+                iconSizeDp = 19,
+                fillColor = UiTheme.surface,
+                strokeColor = UiTheme.stroke,
+                iconTint = UiTheme.accentBright,
+                contentDesc = L.t("retry_search")
+            ) { loadGallery(forceRefresh = true) },
+            LinearLayout.LayoutParams(dp(42), dp(42))
+        )
+        main.addView(topRow)
+
+        val badgeRow = StudioIcons.iconPill(
+            context = this,
+            iconType = StudioIcons.Type.SEARCH,
+            label = L.t("bw_sketch_badge"),
+            textColor = UiTheme.accentBright,
+            iconColor = UiTheme.accentBright,
+            iconSizeDp = 13,
+            textSizeSp = 11.5f
+        ).apply {
+            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10, UiTheme.stroke)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+        }
+        main.addView(badgeRow, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+
+        main.addView(ScrollView(this).apply { addView(bodyCol) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        root.addView(main, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        applyInsetsCallback = {
+            main.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(10))
+        }
+        ViewCompat.requestApplyInsets(root)
+        loadGallery(forceRefresh = false)
+    }
+
+    private fun buildBingImagesUrl(query: String): String {
+        val q = query.trim().ifEmpty { "Anime black and white sketch drawing" }
+        val bwParam = if (q.contains("black and white", ignoreCase = true) || q.contains("sketch", ignoreCase = true)) "&qft=+filterui:color2-bw" else ""
+        return "https://www.bing.com/images/search?q=${Uri.encode(q)}$bwParam"
+    }
+
+    private fun openInChrome(query: String) {
+        val clean = query.trim().ifEmpty { "Anime black and white sketch drawing" }
+        val googleUrl = "https://www.google.com/search?tbm=isch&q=${Uri.encode(clean)}&tbs=ic:gray"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(googleUrl)).apply {
+                setPackage("com.android.chrome")
+            })
+        } catch (_: Throwable) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(googleUrl)))
+            } catch (_: Throwable) {}
+        }
     }
 
     // ---------------- MICROSOFT BING IMAGES IN-APP BROWSER ----------------
@@ -687,7 +1036,7 @@ class MainActivity : ComponentActivity() {
                 strokeColor = null,
                 iconTint = Color.WHITE,
                 contentDesc = L.t("back")
-            ) { destroyWebView(); showFlow(Flow.MAIN) },
+            ) { destroyWebView(); showFlow(browserReturnFlow) },
             LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(8) }
         )
         val barInput = EditText(this).apply {
@@ -717,10 +1066,29 @@ class MainActivity : ComponentActivity() {
                 val q = barInput.text.toString().trim()
                 if (q.isNotEmpty()) {
                     browserQuery = q
-                    wv.loadUrl("https://www.bing.com/images/search?q=${Uri.encode(q)}")
+                    wv.loadUrl(buildBingImagesUrl(q))
                 }
             },
-            LinearLayout.LayoutParams(dp(42), dp(42))
+            LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(6) }
+        )
+        topBar.addView(
+            StudioIcons.iconPill(
+                context = this,
+                iconType = StudioIcons.Type.GLOBE,
+                label = L.t("open_chrome"),
+                textColor = Color.WHITE,
+                iconColor = Color.WHITE,
+                iconSizeDp = 14,
+                textSizeSp = 11.5f
+            ).apply {
+                background = UiTheme.round(this@MainActivity, Color.parseColor("#2AFFFFFF"), 12)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                UiTheme.bounce(this) {
+                    val q = barInput.text.toString().trim().ifEmpty { browserQuery }
+                    openInChrome(q)
+                }
+            },
+            LinearLayout.LayoutParams(WRAP_CONTENT, dp(42))
         )
         col.addView(topBar)
 
@@ -756,12 +1124,18 @@ class MainActivity : ComponentActivity() {
                             document.addEventListener('click', function(e) {
                                 var el = e.target;
                                 var link = el && el.closest ? el.closest('a.iusc') : null;
+                                var gLink = el && el.closest ? el.closest('a[href*="imgurl="]') : null;
                                 var img = (el && el.tagName === 'IMG') ? el : (el && el.closest ? el.closest('a,div')?.querySelector('img') : null);
                                 var fullUrl = '';
                                 if (link) {
                                     try {
                                         var m = JSON.parse(link.getAttribute('m') || '{}');
                                         if (m.murl) fullUrl = m.murl;
+                                    } catch(err) {}
+                                } else if (gLink) {
+                                    try {
+                                        var u = new URL(gLink.href);
+                                        fullUrl = u.searchParams.get('imgurl') || '';
                                     } catch(err) {}
                                 }
                                 var thumbUrl = (img && img.src) ? img.src : '';
@@ -776,7 +1150,7 @@ class MainActivity : ComponentActivity() {
                     view?.evaluateJavascript(js, null)
                 }
             }
-            loadUrl("https://www.bing.com/images/search?q=${Uri.encode(browserQuery)}")
+            loadUrl(buildBingImagesUrl(browserQuery))
         }
         activeWebView = wv
         col.addView(wv, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))

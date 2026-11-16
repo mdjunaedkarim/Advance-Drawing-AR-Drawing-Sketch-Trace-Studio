@@ -76,8 +76,40 @@ object L {
         "zh_hk" to LTranslationsB.zhHk
     )
 
+    private val extraEn = mapOf(
+        "more_photos" to "More Photos",
+        "searching_sketches" to "Auto-searching 5 B&W sketches...",
+        "bw_sketch_badge" to "B&W Sketch Auto-Search • Top 5",
+        "open_chrome" to "Chrome",
+        "retry_search" to "Retry Search",
+        "no_sketches_found" to "Could not load sketches right now. Tap More Photos to browse online.",
+        "mood_normal" to "Normal",
+        "mood_cute" to "Cute",
+        "mood_action" to "Action",
+        "mood_aggressive" to "Aggressive",
+        "mood_lineart" to "Line Art"
+    )
+
+    private val extraBn = mapOf(
+        "more_photos" to "More Photos",
+        "searching_sketches" to "সাদা-কালো ৫টি স্কেচ খোঁজা হচ্ছে...",
+        "bw_sketch_badge" to "অটো সার্চ • সেরা ৫টি সাদা-কালো স্কেচ",
+        "open_chrome" to "Chrome",
+        "retry_search" to "আবার খুঁজুন",
+        "no_sketches_found" to "এই মুহূর্তে ছবি লোড করা যায়নি। নিচের More Photos-এ ট্যাপ করুন।",
+        "mood_normal" to "নরমাল",
+        "mood_cute" to "কিউট",
+        "mood_action" to "অ্যাকশন",
+        "mood_aggressive" to "এগ্রেসিভ",
+        "mood_lineart" to "সাদা-কালো স্কেচ"
+    )
+
     fun t(key: String): String {
-        val raw = all[lang]?.get(key) ?: LTranslationsA.en[key] ?: key
+        val raw = all[lang]?.get(key)
+            ?: (if (lang == "bn") extraBn[key] else null)
+            ?: extraEn[key]
+            ?: LTranslationsA.en[key]
+            ?: key
         return raw.replace("🎉", "").replace("✓", "").replace("  ", " ").trim()
     }
 }
