@@ -3,6 +3,7 @@ package com.ardrawing.sketch
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.util.AttributeSet
@@ -18,6 +19,17 @@ class OverlayView @JvmOverloads constructor(
 
     private var bitmap: Bitmap? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val guideBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.parseColor("#88A78BFA")
+    }
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.8f
+        color = Color.parseColor("#7738BDF8")
+    }
 
     private val userMatrix = Matrix()
     private val drawMatrix = Matrix()
@@ -28,6 +40,8 @@ class OverlayView @JvmOverloads constructor(
 
     private var imageAlpha = 180
     var isLocked = false
+        private set
+    var gridEnabled = false
         private set
     private var trackingGood = true
     private var initializedPlacement = false
@@ -55,6 +69,17 @@ class OverlayView @JvmOverloads constructor(
 
     fun setOpacity(percent: Int) {
         imageAlpha = (percent.coerceIn(5, 100) * 255) / 100
+        invalidate()
+    }
+
+    fun setGridEnabled(enabled: Boolean) {
+        gridEnabled = enabled
+        invalidate()
+    }
+
+    fun resetPosition() {
+        if (isLocked) return
+        resetPlacement()
         invalidate()
     }
 
@@ -139,6 +164,33 @@ class OverlayView @JvmOverloads constructor(
             userMatrix
         }
         canvas.drawBitmap(bmp, m, paint)
+
+        // Optional Rule-of-Thirds Pro Proportion Grid or Corner Reticles while Placing
+        if (gridEnabled || !isLocked) {
+            val bw = bmp.width.toFloat()
+            val bh = bmp.height.toFloat()
+            canvas.save()
+            canvas.concat(m)
+            if (gridEnabled) {
+                canvas.drawRect(0f, 0f, bw, bh, gridPaint)
+                canvas.drawLine(bw / 3f, 0f, bw / 3f, bh, gridPaint)
+                canvas.drawLine(bw * 2f / 3f, 0f, bw * 2f / 3f, bh, gridPaint)
+                canvas.drawLine(0f, bh / 3f, bw, bh / 3f, gridPaint)
+                canvas.drawLine(0f, bh * 2f / 3f, bw, bh * 2f / 3f, gridPaint)
+            }
+            if (!isLocked) {
+                val c = minOf(bw, bh) * 0.08f
+                canvas.drawLine(0f, c, 0f, 0f, guideBorderPaint)
+                canvas.drawLine(0f, 0f, c, 0f, guideBorderPaint)
+                canvas.drawLine(bw - c, 0f, bw, 0f, guideBorderPaint)
+                canvas.drawLine(bw, 0f, bw, c, guideBorderPaint)
+                canvas.drawLine(0f, bh - c, 0f, bh, guideBorderPaint)
+                canvas.drawLine(0f, bh, c, bh, guideBorderPaint)
+                canvas.drawLine(bw - c, bh, bw, bh, guideBorderPaint)
+                canvas.drawLine(bw, bh - c, bw, bh, guideBorderPaint)
+            }
+            canvas.restore()
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

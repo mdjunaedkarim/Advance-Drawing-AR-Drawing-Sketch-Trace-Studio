@@ -8,41 +8,41 @@ object L {
 
     data class LangInfo(
         val code: String,
-        val flag: String,
+        val badge: String,
         val label: String,
         val sub: String
     )
 
     // বিশ্বের জনবহুল ও সর্বাধিক ব্যবহৃত ২৮টি দেশ ও ভাষা
     val languages = listOf(
-        LangInfo("en", "🇺🇸", "English", "United States / UK / Canada"),
-        LangInfo("bn", "🇧🇩", "বাংলা", "Bangladesh / India"),
-        LangInfo("hi", "🇮🇳", "हिन्दी", "India"),
-        LangInfo("zh", "🇨🇳", "中文 (简体)", "China"),
-        LangInfo("es", "🇪🇸", "Español", "Spain / Mexico / LatAm"),
-        LangInfo("ar", "🇸🇦", "العربية", "Saudi Arabia / Egypt / UAE"),
-        LangInfo("pt", "🇧🇷", "Português", "Brazil / Portugal"),
-        LangInfo("id", "🇮🇩", "Bahasa Indonesia", "Indonesia"),
-        LangInfo("ur", "🇵🇰", "اردو", "Pakistan"),
-        LangInfo("ru", "🇷🇺", "Русский", "Russia"),
-        LangInfo("ja", "🇯🇵", "日本語", "Japan"),
-        LangInfo("fr", "🇫🇷", "Français", "France / Canada"),
-        LangInfo("de", "🇩🇪", "Deutsch", "Germany"),
-        LangInfo("tr", "🇹🇷", "Türkçe", "Turkey"),
-        LangInfo("ko", "🇰🇷", "한국어", "South Korea"),
-        LangInfo("vi", "🇻🇳", "Tiếng Việt", "Vietnam"),
-        LangInfo("th", "🇹🇭", "ไทย", "Thailand"),
-        LangInfo("it", "🇮🇹", "Italiano", "Italy"),
-        LangInfo("pl", "🇵🇱", "Polski", "Poland"),
-        LangInfo("uk", "🇺🇦", "Українська", "Ukraine"),
-        LangInfo("fa", "🇮🇷", "فارسی", "Iran"),
-        LangInfo("ms", "🇲🇾", "Bahasa Melayu", "Malaysia"),
-        LangInfo("tl", "🇵🇭", "Filipino / Tagalog", "Philippines"),
-        LangInfo("sw", "🇰🇪", "Kiswahili", "Kenya / Tanzania"),
-        LangInfo("ha", "🇳🇬", "Hausa", "Nigeria"),
-        LangInfo("nl", "🇳🇱", "Nederlands", "Netherlands"),
-        LangInfo("ta", "🇮🇳", "தமிழ்", "India / Sri Lanka"),
-        LangInfo("zh_hk", "🇹🇼", "中文 (繁體)", "Taiwan / Hong Kong")
+        LangInfo("en", "EN", "English", "United States / UK / Canada"),
+        LangInfo("bn", "BN", "বাংলা", "Bangladesh / India"),
+        LangInfo("hi", "HI", "हिन्दी", "India"),
+        LangInfo("zh", "ZH", "中文 (简体)", "China"),
+        LangInfo("es", "ES", "Español", "Spain / Mexico / LatAm"),
+        LangInfo("ar", "AR", "العربية", "Saudi Arabia / Egypt / UAE"),
+        LangInfo("pt", "PT", "Português", "Brazil / Portugal"),
+        LangInfo("id", "ID", "Bahasa Indonesia", "Indonesia"),
+        LangInfo("ur", "UR", "اردو", "Pakistan"),
+        LangInfo("ru", "RU", "Русский", "Russia"),
+        LangInfo("ja", "JA", "日本語", "Japan"),
+        LangInfo("fr", "FR", "Français", "France / Canada"),
+        LangInfo("de", "DE", "Deutsch", "Germany"),
+        LangInfo("tr", "TR", "Türkçe", "Turkey"),
+        LangInfo("ko", "KO", "한국어", "South Korea"),
+        LangInfo("vi", "VI", "Tiếng Việt", "Vietnam"),
+        LangInfo("th", "TH", "ไทย", "Thailand"),
+        LangInfo("it", "IT", "Italiano", "Italy"),
+        LangInfo("pl", "PL", "Polski", "Poland"),
+        LangInfo("uk", "UK", "Українська", "Ukraine"),
+        LangInfo("fa", "FA", "فارسی", "Iran"),
+        LangInfo("ms", "MS", "Bahasa Melayu", "Malaysia"),
+        LangInfo("tl", "TL", "Filipino / Tagalog", "Philippines"),
+        LangInfo("sw", "SW", "Kiswahili", "Kenya / Tanzania"),
+        LangInfo("ha", "HA", "Hausa", "Nigeria"),
+        LangInfo("nl", "NL", "Nederlands", "Netherlands"),
+        LangInfo("ta", "TA", "தமிழ்", "India / Sri Lanka"),
+        LangInfo("zh_hk", "TW", "中文 (繁體)", "Taiwan / Hong Kong")
     )
 
     private val all: Map<String, Map<String, String>> = mapOf(
@@ -76,5 +76,8 @@ object L {
         "zh_hk" to LTranslationsB.zhHk
     )
 
-    fun t(key: String): String = all[lang]?.get(key) ?: LTranslationsA.en[key] ?: key
+    fun t(key: String): String {
+        val raw = all[lang]?.get(key) ?: LTranslationsA.en[key] ?: key
+        return raw.replace("🎉", "").replace("✓", "").replace("  ", " ").trim()
+    }
 }

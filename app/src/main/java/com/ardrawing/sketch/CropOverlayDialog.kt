@@ -17,7 +17,6 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -38,8 +37,8 @@ object CropOverlayDialog {
 
         val root = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0B0F19"))
-            setPadding(dp(14), dp(32), dp(14), dp(18))
+            setBackgroundColor(Color.parseColor("#080B14"))
+            setPadding(dp(16), dp(32), dp(16), dp(18))
         }
 
         // Top Bar
@@ -48,12 +47,18 @@ object CropOverlayDialog {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(10))
         }
-        val cancelBtn = Button(act).apply {
-            text = "✕"
-            textSize = 16f
-            UiTheme.styleSoftBtn(act, this, 14, Color.parseColor("#1E293B"), Color.parseColor("#334155"), Color.WHITE)
-            UiTheme.bounce(this) { dialog.dismiss() }
-        }
+        val cancelBtn = UiTheme.studioIconBtn(
+            act = act,
+            icon = StudioIcons.Type.CLOSE,
+            sizeDp = 46,
+            iconSizeDp = 20,
+            rDp = 14,
+            fillColor = Color.parseColor("#161E31"),
+            strokeColor = Color.parseColor("#2A3654"),
+            iconTint = Color.WHITE,
+            contentDesc = L.t("cancel")
+        ) { dialog.dismiss() }
+
         val titleTv = TextView(act).apply {
             text = L.t("crop_resize")
             textSize = 18f
@@ -61,24 +66,38 @@ object CropOverlayDialog {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
-        val rotateBtn = Button(act).apply {
-            text = "↻ 90°"
-            textSize = 13f
-            UiTheme.styleSoftBtn(act, this, 14, Color.parseColor("#1E293B"), Color.parseColor("#334155"), Color.WHITE)
+        val rotateBtn = StudioIcons.iconPill(
+            context = act,
+            iconType = StudioIcons.Type.ROTATE_90,
+            label = "90°",
+            textColor = Color.WHITE,
+            iconColor = Color.parseColor("#A78BFA"),
+            iconSizeDp = 17,
+            textSizeSp = 13f
+        ).apply {
+            background = UiTheme.round(act, Color.parseColor("#161E31"), 14, Color.parseColor("#2A3654"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
         }
-        topBar.addView(cancelBtn, LinearLayout.LayoutParams(dp(44), dp(42)))
+        topBar.addView(cancelBtn, LinearLayout.LayoutParams(dp(46), dp(46)))
         topBar.addView(titleTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        topBar.addView(rotateBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(42)))
+        topBar.addView(rotateBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(46)))
         root.addView(topBar)
 
         val sizeHintTv = TextView(act).apply {
             text = "${workingBmp.width} × ${workingBmp.height} px"
             textSize = 12f
-            setTextColor(Color.parseColor("#94A3B8"))
+            fontFeatureSettings = "tnum"
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            background = UiTheme.round(act, Color.parseColor("#161E31"), 10, Color.parseColor("#2A3654"))
+            setPadding(dp(12), dp(4), dp(12), dp(4))
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(8))
         }
-        root.addView(sizeHintTv)
+        val hintWrap = FrameLayout(act).apply {
+            setPadding(0, 0, 0, dp(8))
+            addView(sizeHintTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
+        }
+        root.addView(hintWrap)
 
         val cropView = CropCanvasView(act) { w, h ->
             sizeHintTv.text = "$w × $h px"
@@ -111,7 +130,7 @@ object CropOverlayDialog {
                     background = if (active) {
                         UiTheme.grad(act, "#8B5CF6", "#6D28D9", 14)
                     } else {
-                        UiTheme.round(act, Color.parseColor("#1E293B"), 14, Color.parseColor("#334155"))
+                        UiTheme.round(act, Color.parseColor("#161E31"), 14, Color.parseColor("#2A3654"))
                     }
                 }
             }
@@ -121,7 +140,7 @@ object CropOverlayDialog {
                 text = label
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
-                setPadding(dp(16), dp(8), dp(16), dp(8))
+                setPadding(dp(16), dp(9), dp(16), dp(9))
                 UiTheme.bounce(this) {
                     aspectRatio = r
                     cropView.setAspectRatio(r)
@@ -142,31 +161,35 @@ object CropOverlayDialog {
 
         // Bottom Action Row
         val bottomRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-        val resetBtn = Button(act).apply {
-            text = L.t("reset_crop")
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            UiTheme.styleSoftBtn(act, this, 16, Color.parseColor("#1E293B"), Color.parseColor("#475569"), Color.WHITE)
-            UiTheme.bounce(this) {
-                aspectRatio = null
-                cropView.setAspectRatio(null)
-                cropView.resetCrop()
-                updateChips()
-            }
+        val resetBtn = UiTheme.studioSoftAction(
+            act = act,
+            icon = StudioIcons.Type.RESTORE,
+            label = L.t("reset_crop"),
+            fillColor = Color.parseColor("#161E31"),
+            strokeColor = Color.parseColor("#334155"),
+            textColor = Color.WHITE,
+            iconColor = Color.parseColor("#CBD5E1"),
+            rDp = 16
+        ) {
+            aspectRatio = null
+            cropView.setAspectRatio(null)
+            cropView.resetCrop()
+            updateChips()
         }
-        val applyBtn = Button(act).apply {
-            text = "✓  ${L.t("apply_crop")}"
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            UiTheme.styleGradientBtn(act, this, "#10B981", "#059669", 16)
-            UiTheme.bounce(this) {
-                val cropped = cropView.cropResult()
-                dialog.dismiss()
-                onCropped(cropped)
-            }
+        val applyBtn = UiTheme.studioGradientAction(
+            act = act,
+            icon = StudioIcons.Type.CHECK,
+            label = L.t("apply_crop"),
+            hex1 = "#10B981",
+            hex2 = "#059669",
+            rDp = 16
+        ) {
+            val cropped = cropView.cropResult()
+            dialog.dismiss()
+            onCropped(cropped)
         }
-        bottomRow.addView(resetBtn, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(10) })
-        bottomRow.addView(applyBtn, LinearLayout.LayoutParams(0, dp(50), 2f))
+        bottomRow.addView(resetBtn, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(10) })
+        bottomRow.addView(applyBtn, LinearLayout.LayoutParams(0, dp(52), 2f))
         root.addView(bottomRow)
 
         dialog.setContentView(FrameLayout(act).apply {
@@ -296,16 +319,12 @@ object CropOverlayDialog {
 
             // Corner L-handles
             val len = minOf(36f, cropRect.width() * 0.25f, cropRect.height() * 0.25f)
-            // TL
             canvas.drawLine(cropRect.left, cropRect.top, cropRect.left + len, cropRect.top, handlePaint)
             canvas.drawLine(cropRect.left, cropRect.top, cropRect.left, cropRect.top + len, handlePaint)
-            // TR
             canvas.drawLine(cropRect.right - len, cropRect.top, cropRect.right, cropRect.top, handlePaint)
             canvas.drawLine(cropRect.right, cropRect.top, cropRect.right, cropRect.top + len, handlePaint)
-            // BL
             canvas.drawLine(cropRect.left, cropRect.bottom - len, cropRect.left, cropRect.bottom, handlePaint)
             canvas.drawLine(cropRect.left, cropRect.bottom, cropRect.left + len, cropRect.bottom, handlePaint)
-            // BR
             canvas.drawLine(cropRect.right - len, cropRect.bottom, cropRect.right, cropRect.bottom, handlePaint)
             canvas.drawLine(cropRect.right, cropRect.bottom - len, cropRect.right, cropRect.bottom, handlePaint)
         }
