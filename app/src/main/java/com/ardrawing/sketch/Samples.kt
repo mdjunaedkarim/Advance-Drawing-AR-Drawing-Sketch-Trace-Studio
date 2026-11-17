@@ -214,12 +214,20 @@ object Samples {
         if (norm.isEmpty()) return emptyList()
         val seriesFiltered = if (seriesName.isEmpty()) items else bySeries(seriesName)
         val exact = seriesFiltered.filter { it.character.equals(norm, ignoreCase = true) }
-        if (exact.isNotEmpty()) return exact
-        return seriesFiltered.filter {
+        if (exact.isNotEmpty()) return exact.take(5)
+        val matched = seriesFiltered.filter {
             it.character.lowercase().startsWith(norm) ||
                 it.character.lowercase().split(" ").any { w -> w == norm } ||
                 (norm.length >= 3 && it.character.lowercase().contains(norm))
         }
+        val bestChar = matched
+            .sortedWith(
+                compareByDescending<Item> { it.character.lowercase().startsWith(norm) }
+                    .thenByDescending { it.character.lowercase().split(" ").any { w -> w == norm } }
+            )
+            .firstOrNull()
+            ?.character ?: return emptyList()
+        return seriesFiltered.filter { it.character.equals(bestChar, ignoreCase = true) }.take(5)
     }
 
     private val thumbCache = LruCache<Int, Bitmap>(160)

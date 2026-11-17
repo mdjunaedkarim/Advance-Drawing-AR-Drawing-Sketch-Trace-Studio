@@ -379,7 +379,7 @@ object ImageProcessor {
                     val lum = (r * 299 + g * 587 + b * 114) / 1000
                     val sat = max(r, max(g, b)) - min(r, min(g, b))
                     if (sat > 42 && lum < 235) vivid++
-                    if (lum >= 195) lightPaper++
+                    if (lum >= 190) lightPaper++
                     if (lum < 85) darkInk++
                 }
                 total++
@@ -392,70 +392,126 @@ object ImageProcessor {
         val lightRatio = lightPaper.toFloat() / total
         val darkRatio = darkInk.toFloat() / total
 
-        // Reject colorful photos/game screenshots and dark scenes with no paper background
-        if (vividRatio > 0.25f && lightRatio < 0.35f) return false
-        if (vividRatio > 0.42f) return false
-        if (lightRatio < 0.14f && darkRatio > 0.55f) return false
+        // Reject dark game screenshots / photos with no light paper background
+        if (lightRatio < 0.16f && darkRatio > 0.50f) return false
+        if (vividRatio > 0.35f && lightRatio < 0.35f) return false
+        if (vividRatio > 0.52f) return false
         return true
     }
 
     /**
-     * Ensures a sketch bitmap is pure black-and-white monochrome (no mixed color tints)
-     * with clean white paper highlights while preserving pencil shading and crisp dark lines.
+     * Converts any sketch/line-art bitmap into pure black ink lines on a TRANSPARENT background:
+     * - Removes white/light paper backgrounds completely (Color.TRANSPARENT)
+     * - Strips colored fills (e.g. blue/purple/red clothing) using local 7x7 contrast so only
+     *   the black outlines and pen strokes remain
+     * - Outputs pure black (#000000) anti-aliased strokes with zero mixed color
      */
     fun toCleanBwSketch(src: Bitmap): Bitmap {
         val w = src.width
         val h = src.height
-        val px = IntArray(w * h)
+        val n = w * h
+        val px = IntArray(n)
         src.getPixels(px, 0, w, 0, 0, w, h)
 
-        var hasColor = false
-        val step = (px.size / 4096).coerceAtLeast(1)
-        var i = 0
-        while (i < px.size) {
+        val lums = IntArray(n)
+        val sats = IntArray(n)
+        var hasColoredFills = false
+
+        for (i in 0 until n) {
             val c = px[i]
-            if (Color.alpha(c) > 20) {
+            val a = Color.alpha(c)
+            if (a < 20) {
+                lums[i] = 255
+                sats[i] = 0
+            } else {
                 val r = Color.red(c)
                 val g = Color.green(c)
                 val b = Color.blue(c)
-                if (max(r, max(g, b)) - min(r, min(g, b)) > 10) {
-                    hasColor = true
-                    break
+                val lum = (r * 299 + g * 587 + b * 114) / 1000
+                val sat = max(r, max(g, b)) - min(r, min(g, b))
+                lums[i] = lum
+                sats[i] = sat
+                if (sat > 18 && lum in 30..235) {
+                    hasColoredFills = true
                 }
             }
-            i += step
         }
-        if (!hasColor) {
-            // Double check full array quickly if sample didn't catch small colored spots
-            for (c in px) {
-                if (Color.alpha(c) > 20) {
-                    val r = Color.red(c)
-                    val g = Color.green(c)
-                    val b = Color.blue(c)
-                    if (max(r, max(g, b)) - min(r, min(g, b)) > 12) {
-                        hasColor = true
-                        break
+
+        // Fast 7x7 integral image for local luminance when colored regions exist
+        val integral = if (hasColoredFills) {
+            val stride = w + 1
+            val satGrid = IntArray((h + 1) * stride)
+            for (y in 0 until h) {
+                var rowSum = 0
+                val yOff = y * w
+                val gCur = (y + 1) * stride
+                val gPrev = y * stride
+                for (x in 0 until w) {
+                    rowSum += lums[yOff + x]
+                    satGrid[gCur + x + 1] = satGrid[gPrev + x + 1] + rowSum
+                }
+            }
+            satGrid
+        } else null
+
+        val out = IntArray(n)
+        val radius = 3
+        val stride = w + 1
+
+        for (y in 0 until h) {
+            val y1 = (y - radius).coerceAtLeast(0)
+            val y2 = (y + radius).coerceAtMost(h - 1)
+            val rowOff = y * w
+            for (x in 0 until w) {
+                val idx = rowOff + x
+                val origA = Color.alpha(px[idx])
+                if (origA < 20) {
+                    out[idx] = Color.TRANSPARENT
+                    continue
+                }
+
+                val lum = lums[idx]
+                val sat = sats[idx]
+
+                if (sat > 16) {
+                    // Colored pixel: keep ONLY dark outlines or local stroke edges, strip flat color fills
+                    val keepAsLine = if (lum <= 42) {
+                        true
+                    } else if (integral != null && lum < 210) {
+                        val x1 = (x - radius).coerceAtLeast(0)
+                        val x2 = (x + radius).coerceAtMost(w - 1)
+                        val area = (x2 - x1 + 1) * (y2 - y1 + 1)
+                        val sum = integral[(y2 + 1) * stride + (x2 + 1)] -
+                            integral[y1 * stride + (x2 + 1)] -
+                            integral[(y2 + 1) * stride + x1] +
+                            integral[y1 * stride + x1]
+                        val localMean = sum / area
+                        (localMean - lum) >= 12
+                    } else {
+                        false
+                    }
+
+                    if (keepAsLine) {
+                        val edgeAlpha = if (lum <= 70) 255 else ((215 - lum) * 255 / 145).coerceIn(80, 255)
+                        val finalA = (edgeAlpha * origA / 255).coerceIn(0, 255)
+                        out[idx] = (finalA shl 24)
+                    } else {
+                        out[idx] = Color.TRANSPARENT
+                    }
+                } else {
+                    // Neutral B&W pixel: remove light paper background, keep crisp black lines
+                    if (lum >= 224) {
+                        out[idx] = Color.TRANSPARENT
+                    } else if (lum <= 135) {
+                        out[idx] = (origA shl 24)
+                    } else {
+                        val lineA = ((224 - lum) * 255 / 89).coerceIn(0, 255)
+                        val finalA = (lineA * origA / 255).coerceIn(0, 255)
+                        out[idx] = (finalA shl 24)
                     }
                 }
             }
         }
-        if (!hasColor) return src
-
-        for (idx in px.indices) {
-            val c = px[idx]
-            val a = Color.alpha(c)
-            if (a == 0) continue
-            val r = Color.red(c)
-            val g = Color.green(c)
-            val b = Color.blue(c)
-            val lum = (r * 299 + g * 587 + b * 114) / 1000
-            val gray = when {
-                lum >= 238 -> 255
-                lum <= 32 -> (lum * 0.85f).toInt().coerceIn(0, 255)
-                else -> lum
-            }
-            px[idx] = (a shl 24) or (gray shl 16) or (gray shl 8) or gray
-        }
-        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
     }
 }

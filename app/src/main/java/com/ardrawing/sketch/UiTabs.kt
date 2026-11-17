@@ -1019,8 +1019,9 @@ object UiTabs {
                 val imgWrap = FrameLayout(act)
                 val iv = ImageView(act).apply {
                     setImageBitmap(bmp)
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    setBackgroundColor(UiTheme.surfaceAlt)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
+                    setPadding(dp(4), dp(4), dp(4), dp(4))
                     clipRounded(this, dp(14).toFloat())
                 }
                 UiTheme.bounce(iv) { if (bmp != null) onDraw(bmp) }
@@ -1641,12 +1642,12 @@ object UiTabs {
         val iconBox = FrameLayout(act)
         if (bmp != null) {
             val thumbWrap = FrameLayout(act).apply {
-                background = UiTheme.round(act, UiTheme.surfaceAlt, 22, UiTheme.stroke)
+                background = UiTheme.round(act, Color.WHITE, 22, UiTheme.stroke)
                 setPadding(dp(4), dp(4), dp(4), dp(4))
             }
             val thumbIv = ImageView(act).apply {
                 setImageBitmap(bmp)
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 clipRounded(this, dp(18).toFloat())
             }
             thumbWrap.addView(thumbIv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
