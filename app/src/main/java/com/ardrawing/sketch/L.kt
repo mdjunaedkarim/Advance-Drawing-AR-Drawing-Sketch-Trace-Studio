@@ -87,7 +87,14 @@ object L {
         "mood_cute" to "Cute",
         "mood_action" to "Action",
         "mood_aggressive" to "Aggressive",
-        "mood_lineart" to "Line Art"
+        "mood_lineart" to "Line Art",
+        "cat_fruit" to "Fruits",
+        "random_mix_title" to "Featured Random Mix",
+        "all_anime_title" to "All 20 Anime Series",
+        "discover_feed_title" to "Random Sketches Feed",
+        "shuffle_btn" to "Shuffle",
+        "browse_more_cat" to "More on Google Images",
+        "explore_chars" to "Characters"
     )
 
     private val extraBn = mapOf(
@@ -101,7 +108,14 @@ object L {
         "mood_cute" to "কিউট",
         "mood_action" to "অ্যাকশন",
         "mood_aggressive" to "এগ্রেসিভ",
-        "mood_lineart" to "সাদা-কালো স্কেচ"
+        "mood_lineart" to "সাদা-কালো স্কেচ",
+        "cat_fruit" to "ফল",
+        "random_mix_title" to "র্যান্ডম স্কেচ মিক্স",
+        "all_anime_title" to "সব ২০টি অ্যানিমে সিরিজ",
+        "discover_feed_title" to "সব ক্যাটাগরির র্যান্ডম ছবি",
+        "shuffle_btn" to "র্যান্ডম করুন",
+        "browse_more_cat" to "Google-এ আরও ছবি দেখুন",
+        "explore_chars" to "চরিত্র"
     )
 
     fun t(key: String): String {

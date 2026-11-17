@@ -10,6 +10,7 @@ object Samples {
     enum class Cat(val labelKey: String, val assetFolder: String = "") {
         ALL("cat_all"),
         ANIME("cat_anime", "anime"),
+        FRUIT("cat_fruit", "fruit"),
         CAR("cat_car", "car"),
         FOOD("cat_food", "food"),
         FLOWER("cat_flower", "flower"),

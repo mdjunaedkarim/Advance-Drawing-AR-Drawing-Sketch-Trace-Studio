@@ -31,7 +31,7 @@ object StudioIcons {
         FLIP_H, FLASH, LOCK, UNLOCK, EYE_HIDE, EXPAND, GRID, RESET_POS,
         COLLECTION, ANIME_STAR, IMPORT, EXPORT_ZIP, LINK, EDIT, SHARE, TRASH, COMPASS,
         COIN, CROWN, TIMER, SHIELD, SHIELD_LOCK, MOON, INFO, STAR, MAIL, COPY, CHILD_SHIELD,
-        CAT_ALL, CAT_ANIME, CAT_CAR, CAT_FOOD, CAT_FLOWER, CAT_SCENERY, CAT_ANIMALS,
+        CAT_ALL, CAT_ANIME, CAT_FRUIT, CAT_CAR, CAT_FOOD, CAT_FLOWER, CAT_SCENERY, CAT_ANIMALS,
         TROPHY
     }
 
@@ -847,6 +847,28 @@ object StudioIcons {
                     canvas.drawPath(body, strokePaint)
                     canvas.drawCircle(7.2f, 17.5f, 1.8f, fillPaint)
                     canvas.drawCircle(16.8f, 17.5f, 1.8f, fillPaint)
+                }
+                Type.CAT_FRUIT -> {
+                    // Crisp apple silhouette + leaf
+                    val apple = Path().apply {
+                        moveTo(12f, 8.2f)
+                        cubicTo(9.2f, 6.2f, 5f, 7.6f, 5f, 12.2f)
+                        cubicTo(5f, 16.8f, 8.2f, 20f, 10.6f, 19.8f)
+                        cubicTo(11.4f, 19.7f, 11.7f, 19.2f, 12f, 19.2f)
+                        cubicTo(12.3f, 19.2f, 12.6f, 19.7f, 13.4f, 19.8f)
+                        cubicTo(15.8f, 20f, 19f, 16.8f, 19f, 12.2f)
+                        cubicTo(19f, 7.6f, 14.8f, 6.2f, 12f, 8.2f)
+                        close()
+                    }
+                    canvas.drawPath(apple, strokePaint)
+                    canvas.drawLine(12f, 8.2f, 12.6f, 4.4f, strokePaint)
+                    val leaf = Path().apply {
+                        moveTo(12.5f, 5.8f)
+                        cubicTo(14.8f, 3.8f, 17.5f, 4.5f, 17.2f, 6.6f)
+                        cubicTo(15.5f, 7.3f, 13.8f, 7.0f, 12.5f, 5.8f)
+                        close()
+                    }
+                    canvas.drawPath(leaf, fillPaint)
                 }
                 Type.CAT_FOOD -> {
                     canvas.drawArc(RectF(4.5f, 6f, 19.5f, 15f), 180f, 180f, true, strokePaint)

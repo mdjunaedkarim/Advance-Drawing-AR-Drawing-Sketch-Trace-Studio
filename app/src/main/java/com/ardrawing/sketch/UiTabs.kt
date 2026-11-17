@@ -43,18 +43,12 @@ object UiTabs {
     var selectedCat: Samples.Cat = Samples.Cat.ALL
     val selectedFiles = HashSet<String>()
     private var storeCoinsTab = true
-
-    private val extraTopics = mapOf(
-        Samples.Cat.CAR to listOf("Sports Car", "Lamborghini", "Superbike", "Fighter Jet", "Airplane", "Space Rocket"),
-        Samples.Cat.FOOD to listOf("Pizza Slice", "Burger", "Ice Cream", "Cupcake", "Mango", "Pineapple"),
-        Samples.Cat.FLOWER to listOf("Rose Flower", "Lotus Flower", "Sunflower", "Tulip Flower", "Sakura Blossom", "Butterfly on Flower"),
-        Samples.Cat.SCENERY to listOf("Mountain River Boat", "Village House", "Sunset Beach", "Waterfall Landscape", "River Bridge"),
-        Samples.Cat.ANIMALS to listOf("Cute Cat", "Lion Face", "Peacock", "Parrot", "Cute Puppy", "Dragon")
-    )
+    private var homeShuffleSeed: Long = System.currentTimeMillis()
 
     private fun catIcon(cat: Samples.Cat): StudioIcons.Type = when (cat) {
         Samples.Cat.ALL -> StudioIcons.Type.CAT_ALL
         Samples.Cat.ANIME -> StudioIcons.Type.CAT_ANIME
+        Samples.Cat.FRUIT -> StudioIcons.Type.CAT_FRUIT
         Samples.Cat.CAR -> StudioIcons.Type.CAT_CAR
         Samples.Cat.FOOD -> StudioIcons.Type.CAT_FOOD
         Samples.Cat.FLOWER -> StudioIcons.Type.CAT_FLOWER
@@ -628,291 +622,361 @@ object UiTabs {
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
         )
 
-        val builtInList = if (selectedCat == Samples.Cat.ALL) {
-            Samples.items
-        } else {
-            Samples.items.filter { it.cat == selectedCat }
-        }
-
-        // Featured Horizontal Spotlight Carousel (1 flagship pose per top viral character)
-        if ((selectedCat == Samples.Cat.ALL || selectedCat == Samples.Cat.ANIME) && builtInList.size > 3) {
-            val spotRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-            val spotlightItems = builtInList
-                .distinctBy { it.character.ifEmpty { it.id.toString() } }
-                .take(10)
-            spotlightItems.forEach { sample ->
-                val thumbBmp = Samples.loadThumb(act, sample, 320)
-                val spotCard = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
-                    setPadding(dp(9), dp(9), dp(9), dp(11))
-                    elevation = dp(4).toFloat()
-                    val imgFrame = FrameLayout(act).apply {
-                        background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
-                        setPadding(dp(6), dp(6), dp(6), dp(6))
-                        addView(ImageView(act).apply {
-                            setImageBitmap(thumbBmp)
-                            scaleType = ImageView.ScaleType.FIT_CENTER
-                        }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-                        addView(TextView(act).apply {
-                            text = sample.series.ifEmpty { sample.cat.label() }
-                            textSize = 9f
-                            UiTheme.applyUiFont(this, bold = true)
-                            setTextColor(Color.WHITE)
-                            background = UiTheme.grad(act, "#EC4899", "#DB2777", 7)
-                            setPadding(dp(6), dp(2), dp(6), dp(2))
-                        }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
-                    }
-                    addView(imgFrame, LinearLayout.LayoutParams(MATCH_PARENT, dp(122)))
-                    addView(TextView(act).apply {
-                        text = sample.character.ifEmpty { sample.title }
-                        textSize = 12.5f
-                        UiTheme.applyDisplayFont(this, bold = true)
-                        setTextColor(UiTheme.textMain)
-                        maxLines = 1
-                        setPadding(dp(2), dp(8), dp(2), dp(6))
-                    })
-                    addView(buildTracePill(act), LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-                    UiTheme.bounce(this) { Samples.loadFull(act, sample)?.let(onSampleClick) }
-                }
-                spotRow.addView(spotCard, LinearLayout.LayoutParams(dp(146), WRAP_CONTENT).apply { marginEnd = dp(10) })
-            }
-            col.addView(
-                HorizontalScrollView(act).apply {
-                    isHorizontalScrollBarEnabled = false
-                    addView(spotRow)
-                },
-                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) }
-            )
-        }
-
-        // Grouped Built-in Viral Character Showcase Grid (1 card per hero -> opens 5 sketches)
         val cardW = (act.resources.displayMetrics.widthPixels - dp(44)) / 2
-        if (builtInList.isNotEmpty()) {
-            val grouped = builtInList.groupBy { it.series.ifEmpty { it.cat.label() } }
-            grouped.forEach { (groupName, groupItems) ->
-                val heroShowcase = groupItems
-                    .distinctBy { it.character.ifEmpty { it.id.toString() } }
-                    .take(10)
-                val groupHeader = UiTheme.sectionHeader(
-                    act = act,
-                    icon = StudioIcons.Type.SPARK,
-                    title = groupName,
-                    badgeText = "${groupItems.size}",
-                    c1 = "#EC4899",
-                    c2 = "#DB2777"
-                )
-                col.addView(groupHeader)
 
-                var sRow: LinearLayout? = null
-                heroShowcase.forEachIndexed { idx, item ->
-                    if (idx % 2 == 0) {
-                        sRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-                        col.addView(sRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        fun buildShuffleHeader(
+            icon: StudioIcons.Type,
+            title: String,
+            badgeText: String?,
+            c1: String,
+            c2: String,
+            showShuffle: Boolean
+        ): LinearLayout {
+            val row = UiTheme.sectionHeader(
+                act = act,
+                icon = icon,
+                title = title,
+                badgeText = if (showShuffle) null else badgeText,
+                c1 = c1,
+                c2 = c2
+            )
+            if (showShuffle) {
+                val shufflePill = StudioIcons.iconPill(
+                    context = act,
+                    iconType = StudioIcons.Type.RESTORE,
+                    label = L.t("shuffle_btn"),
+                    textColor = UiTheme.accentBright,
+                    iconColor = UiTheme.accentBright,
+                    iconSizeDp = 13,
+                    textSizeSp = 11.5f
+                ).apply {
+                    background = UiTheme.round(act, UiTheme.accentSoft, 12, UiTheme.stroke)
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    UiTheme.bounce(this) {
+                        homeShuffleSeed = System.nanoTime()
+                        onRefresh()
                     }
-                    val thumbBmp = Samples.loadThumb(act, item, 360)
-                    val charName = item.character.ifEmpty { item.title }
-                    val charCount = Samples.byCharacter(charName, item.series).size.coerceAtLeast(1)
-                    val sCard = LinearLayout(act).apply {
-                        orientation = LinearLayout.VERTICAL
-                        background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
-                        setPadding(dp(8), dp(8), dp(8), dp(10))
-                        elevation = dp(4).toFloat()
+                }
+                row.addView(shufflePill)
+            }
+            return row
+        }
 
-                        val imgBox = FrameLayout(act).apply {
-                            background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
-                            setPadding(dp(6), dp(6), dp(6), dp(6))
-                            addView(ImageView(act).apply {
-                                setImageBitmap(thumbBmp)
-                                scaleType = ImageView.ScaleType.FIT_CENTER
-                            }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-                            addView(TextView(act).apply {
-                                text = item.series.ifEmpty { item.cat.label() }
-                                textSize = 9.5f
-                                UiTheme.applyUiFont(this, bold = true)
-                                setTextColor(UiTheme.accent)
-                                background = UiTheme.round(act, UiTheme.accentSoft, 8)
-                                setPadding(dp(7), dp(2), dp(7), dp(2))
-                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
-                            addView(TextView(act).apply {
-                                text = "$charCount"
-                                fontFeatureSettings = "tnum"
-                                textSize = 10f
-                                UiTheme.applyDisplayFont(this, bold = true)
-                                setTextColor(Color.WHITE)
-                                background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 8)
-                                setPadding(dp(7), dp(2), dp(7), dp(2))
-                            }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
-                        }
-                        addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, cardW + dp(10)))
-
-                        val footRow = LinearLayout(act).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            gravity = Gravity.CENTER_VERTICAL
-                            setPadding(dp(2), dp(8), dp(2), 0)
-                        }
-                        footRow.addView(TextView(act).apply {
-                            text = charName
-                            textSize = 12.5f
-                            UiTheme.applyDisplayFont(this, bold = true)
-                            setTextColor(UiTheme.textMain)
-                            maxLines = 1
-                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-                        footRow.addView(buildTracePill(act))
-                        addView(footRow)
-                        UiTheme.bounce(this) {
-                            if (item.character.isNotEmpty()) {
-                                onOpenCharacterGallery(item.character, item.series)
-                            } else {
-                                Samples.loadFull(act, item)?.let(onSampleClick)
-                            }
-                        }
-                    }
-                    sRow?.addView(sCard, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
-                        if (idx % 2 == 0) marginEnd = dp(12)
-                    })
+        fun openTopicItem(item: CategoryCatalog.TopicItem) {
+            if (item.characterName.isNotEmpty() && item.seriesName.isNotEmpty()) {
+                onOpenCharacterGallery(item.characterName, item.seriesName)
+                return
+            }
+            if (item.localSample != null) {
+                Samples.loadFull(act, item.localSample)?.let(onSampleClick)
+                return
+            }
+            Toast.makeText(act, L.t("saving_image"), Toast.LENGTH_SHORT).show()
+            SketchSearchRepository.loadTopicFullForEditor(act, item) { bmp ->
+                if (act.isFinishing || act.isDestroyed) return@loadTopicFullForEditor
+                if (bmp != null) {
+                    onSampleClick(bmp)
+                } else {
+                    Toast.makeText(act, L.t("no_sketches_found"), Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
-        // 20 Popular Anime Worlds Grid with Geometric Vector Crest Watermarks
-        if (selectedCat == Samples.Cat.ALL || selectedCat == Samples.Cat.ANIME) {
-            col.addView(
-                UiTheme.sectionHeader(
-                    act = act,
-                    icon = StudioIcons.Type.ANIME_STAR,
-                    title = L.t("anime_worlds"),
-                    badgeText = "${AnimeCatalog.list.size}",
-                    c1 = "#F97316",
-                    c2 = "#EA580C"
-                ).apply { setPadding(0, dp(10), 0, dp(10)) }
-            )
+        fun buildTopicCard(
+            item: CategoryCatalog.TopicItem,
+            imgHeightPx: Int,
+            countBadge: String? = null,
+            tagGradHex: Pair<String, String>? = null,
+            actionLabel: String = L.t("trace_now"),
+            onTap: () -> Unit
+        ): LinearLayout {
+            return LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+                setPadding(dp(8), dp(8), dp(8), dp(10))
+                elevation = dp(4).toFloat()
+
+                val imgBox = FrameLayout(act).apply {
+                    background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    val iv = ImageView(act).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+
+                    val spinner = ProgressBar(act).apply { isIndeterminate = true }
+                    addView(spinner, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+
+                    SketchSearchRepository.loadTopicPreviewBitmap(act, item) { bmp ->
+                        spinner.visibility = View.GONE
+                        if (bmp != null) {
+                            iv.setImageBitmap(bmp)
+                        } else {
+                            iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 34, UiTheme.accentBright))
+                        }
+                    }
+
+                    val tagTv = TextView(act).apply {
+                        text = item.tag
+                        textSize = 9.5f
+                        UiTheme.applyUiFont(this, bold = true)
+                        maxLines = 1
+                        if (tagGradHex != null) {
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, tagGradHex.first, tagGradHex.second, 8)
+                        } else {
+                            setTextColor(UiTheme.accent)
+                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                        }
+                        setPadding(dp(7), dp(2), dp(7), dp(2))
+                    }
+                    addView(tagTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
+
+                    if (countBadge != null) {
+                        addView(TextView(act).apply {
+                            text = countBadge
+                            fontFeatureSettings = "tnum"
+                            textSize = 10f
+                            UiTheme.applyDisplayFont(this, bold = true)
+                            setTextColor(Color.WHITE)
+                            background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 8)
+                            setPadding(dp(7), dp(2), dp(7), dp(2))
+                        }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
+                    }
+                }
+                addView(imgBox, LinearLayout.LayoutParams(MATCH_PARENT, imgHeightPx))
+
+                val footRow = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(2), dp(8), dp(2), 0)
+                }
+                footRow.addView(TextView(act).apply {
+                    text = item.title
+                    textSize = 12.5f
+                    UiTheme.applyDisplayFont(this, bold = true)
+                    setTextColor(UiTheme.textMain)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+
+                footRow.addView(
+                    StudioIcons.iconPill(
+                        context = act,
+                        iconType = StudioIcons.Type.ARROW_RIGHT,
+                        label = actionLabel,
+                        textColor = Color.WHITE,
+                        iconColor = Color.WHITE,
+                        iconSizeDp = 11,
+                        textSizeSp = 10.5f
+                    ).apply {
+                        background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 10)
+                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                    }
+                )
+                addView(footRow)
+                UiTheme.bounce(this) { onTap() }
+            }
+        }
+
+        fun renderTopicGrid(items: List<CategoryCatalog.TopicItem>) {
+            var row: LinearLayout? = null
+            items.forEachIndexed { idx, item ->
+                if (idx % 2 == 0) {
+                    row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                    col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+                }
+                val isAnimeHero = item.cat == Samples.Cat.ANIME && item.characterName.isNotEmpty()
+                val card = buildTopicCard(
+                    item = item,
+                    imgHeightPx = cardW + dp(4),
+                    countBadge = if (isAnimeHero) "5" else null,
+                    tagGradHex = null,
+                    actionLabel = L.t("trace_now")
+                ) {
+                    openTopicItem(item)
+                }
+                row?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                    if (idx % 2 == 0) marginEnd = dp(12)
+                })
+            }
+        }
+
+        fun renderAllAnimeGrid() {
+            val covers = CategoryCatalog.animeSeriesCovers()
             var aRow: LinearLayout? = null
-            AnimeCatalog.list.forEachIndexed { idx, series ->
+            covers.forEachIndexed { idx, cover ->
                 if (idx % 2 == 0) {
                     aRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-                    col.addView(aRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+                    col.addView(aRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
                 }
-                val bundledCount = Samples.bySeries(series.name).size
-                val (c1, c2) = UiTheme.seriesPalette(idx)
-                val aCardWrap = FrameLayout(act).apply {
-                    background = UiTheme.round(
-                        act,
-                        UiTheme.surface,
-                        18,
-                        if (bundledCount > 0) UiTheme.accentBright else UiTheme.stroke,
-                        if (bundledCount > 0) 2 else 1
+                val seriesObj = AnimeCatalog.list[idx]
+                val palette = UiTheme.seriesPalette(idx)
+                val card = buildTopicCard(
+                    item = cover,
+                    imgHeightPx = cardW + dp(4),
+                    countBadge = "${seriesObj.characters.size}",
+                    tagGradHex = palette,
+                    actionLabel = L.t("explore_chars")
+                ) {
+                    onOpenAnime(seriesObj)
+                }
+                aRow?.addView(card, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply {
+                    if (idx % 2 == 0) marginEnd = dp(12)
+                })
+            }
+        }
+
+        when (selectedCat) {
+            Samples.Cat.ALL -> {
+                // 1. Horizontal Random Mix Carousel across ALL anime series & categories
+                col.addView(
+                    buildShuffleHeader(
+                        icon = StudioIcons.Type.SPARK,
+                        title = L.t("random_mix_title"),
+                        badgeText = null,
+                        c1 = "#EC4899",
+                        c2 = "#DB2777",
+                        showShuffle = true
                     )
-                    elevation = dp(4).toFloat()
-                    clipRounded(this, dp(18).toFloat())
+                )
+                val spotRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                val mixedSpot = CategoryCatalog.randomMixedSpotlight(homeShuffleSeed, 14)
+                mixedSpot.forEachIndexed { idx, item ->
+                    val isAnimeHero = item.cat == Samples.Cat.ANIME && item.characterName.isNotEmpty()
+                    val card = buildTopicCard(
+                        item = item,
+                        imgHeightPx = dp(122),
+                        countBadge = if (isAnimeHero) "5" else null,
+                        tagGradHex = UiTheme.seriesPalette(idx),
+                        actionLabel = L.t("trace_now")
+                    ) {
+                        openTopicItem(item)
+                    }
+                    spotRow.addView(card, LinearLayout.LayoutParams(dp(152), WRAP_CONTENT).apply { marginEnd = dp(10) })
                 }
-                aCardWrap.addView(
-                    StudioIcons.AnimeWorldCrestView(act, c1, c2, idx),
-                    FrameLayout.LayoutParams(dp(72), dp(72), Gravity.TOP or Gravity.END)
+                col.addView(
+                    HorizontalScrollView(act).apply {
+                        isHorizontalScrollBarEnabled = false
+                        addView(spotRow)
+                    },
+                    LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) }
                 )
 
-                val aCard = LinearLayout(act).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(dp(12), dp(12), dp(12), dp(13))
-
-                    addView(
-                        View(act).apply { background = UiTheme.grad(act, c1, c2, 4) },
-                        LinearLayout.LayoutParams(dp(34), dp(4)).apply { bottomMargin = dp(10) }
-                    )
-
-                    addView(TextView(act).apply {
-                        text = series.name
-                        textSize = 15f
-                        UiTheme.applyDisplayFont(this, bold = true)
-                        setTextColor(UiTheme.textMain)
-                        maxLines = 1
-                    })
-                    val badgesRow = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                    }
-                    if (bundledCount > 0) {
-                        val bPill = StudioIcons.iconPill(
-                            context = act,
-                            iconType = StudioIcons.Type.COLLECTION,
-                            label = "$bundledCount",
-                            textColor = Color.WHITE,
-                            iconColor = Color.WHITE,
-                            iconSizeDp = 11,
-                            textSizeSp = 11f
-                        ).apply {
-                            background = UiTheme.grad(act, "#10B981", "#059669", 8)
-                            setPadding(dp(7), dp(3), dp(7), dp(3))
-                        }
-                        badgesRow.addView(bPill, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(6) })
-                    }
-                    val charPill = StudioIcons.iconPill(
-                        context = act,
-                        iconType = StudioIcons.Type.CHEVRON_RIGHT,
-                        label = L.t("characters_count").replace("{n}", series.characters.size.toString()).replace("›", "").trim(),
-                        textColor = UiTheme.accentBright,
-                        iconColor = UiTheme.accentBright,
-                        iconSizeDp = 12,
-                        textSizeSp = 11f
-                    ).apply {
-                        background = UiTheme.round(act, UiTheme.accentSoft, 8)
-                        setPadding(dp(7), dp(3), dp(7), dp(3))
-                    }
-                    badgesRow.addView(charPill)
-                    addView(badgesRow, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(8) })
-                }
-                aCardWrap.addView(aCard, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-                UiTheme.bounce(aCardWrap) { onOpenAnime(series) }
-                aRow?.addView(aCardWrap, LinearLayout.LayoutParams(cardW, WRAP_CONTENT).apply { if (idx % 2 == 0) marginEnd = dp(12) })
-            }
-        } else {
-            val topics = extraTopics[selectedCat] ?: emptyList()
-            if (topics.isNotEmpty()) {
+                // 2. All 20 Anime Series Showcase (1 visual sketch card per anime, serial by serial)
                 col.addView(
                     UiTheme.sectionHeader(
                         act = act,
+                        icon = StudioIcons.Type.ANIME_STAR,
+                        title = L.t("all_anime_title"),
+                        badgeText = "${AnimeCatalog.list.size}",
+                        c1 = "#F97316",
+                        c2 = "#EA580C"
+                    ).apply { setPadding(0, dp(4), 0, dp(10)) }
+                )
+                renderAllAnimeGrid()
+
+                // 3. Random Mixed Category & Anime Sketches Grid (serial by serial with tags)
+                col.addView(
+                    buildShuffleHeader(
                         icon = StudioIcons.Type.COMPASS,
-                        title = "${L.t("explore_more_ideas")} (${selectedCat.label()})",
+                        title = L.t("discover_feed_title"),
+                        badgeText = null,
                         c1 = "#0EA5E9",
-                        c2 = "#2563EB"
+                        c2 = "#2563EB",
+                        showShuffle = true
                     ).apply { setPadding(0, dp(8), 0, dp(10)) }
                 )
-                topics.forEach { t ->
-                    val row = LinearLayout(act).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
-                        setPadding(dp(14), dp(12), dp(14), dp(12))
-                        elevation = dp(2).toFloat()
-                        val well = FrameLayout(act).apply {
-                            background = UiTheme.round(act, UiTheme.accentSoft, 10)
-                            addView(
-                                StudioIcons.imageView(act, StudioIcons.Type.SEARCH, 16, UiTheme.accentBright),
-                                FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER)
-                            )
-                        }
-                        addView(well, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(12) })
-                        addView(TextView(act).apply {
-                            text = t
-                            textSize = 14.5f
-                            UiTheme.applyUiFont(this, bold = true)
-                            setTextColor(UiTheme.textMain)
-                        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                        addView(
-                            StudioIcons.iconPill(
-                                context = act,
-                                iconType = StudioIcons.Type.CHEVRON_RIGHT,
-                                label = L.t("browse_btn").replace("›", "").trim(),
-                                textColor = UiTheme.accentBright,
-                                iconColor = UiTheme.accentBright,
-                                iconSizeDp = 13,
-                                textSizeSp = 12f
-                            )
-                        )
-                        UiTheme.bounce(this) { onBrowseOnline("$t black and white sketch drawing") }
+                renderTopicGrid(CategoryCatalog.randomMixedGrid(homeShuffleSeed, 16))
+            }
+
+            Samples.Cat.ANIME -> {
+                // Random Anime Hero Spotlight across all 20 series
+                col.addView(
+                    buildShuffleHeader(
+                        icon = StudioIcons.Type.SPARK,
+                        title = L.t("random_mix_title"),
+                        badgeText = null,
+                        c1 = "#EC4899",
+                        c2 = "#DB2777",
+                        showShuffle = true
+                    )
+                )
+                val spotRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                val animeSpot = CategoryCatalog.randomAnimeSpotlight(homeShuffleSeed, 12)
+                animeSpot.forEachIndexed { idx, item ->
+                    val card = buildTopicCard(
+                        item = item,
+                        imgHeightPx = dp(122),
+                        countBadge = "5",
+                        tagGradHex = UiTheme.seriesPalette(idx),
+                        actionLabel = L.t("trace_now")
+                    ) {
+                        openTopicItem(item)
                     }
-                    col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+                    spotRow.addView(card, LinearLayout.LayoutParams(dp(152), WRAP_CONTENT).apply { marginEnd = dp(10) })
                 }
+                col.addView(
+                    HorizontalScrollView(act).apply {
+                        isHorizontalScrollBarEnabled = false
+                        addView(spotRow)
+                    },
+                    LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) }
+                )
+
+                // All 20 Anime Series Showcase Grid (1 card per anime)
+                col.addView(
+                    UiTheme.sectionHeader(
+                        act = act,
+                        icon = StudioIcons.Type.ANIME_STAR,
+                        title = L.t("all_anime_title"),
+                        badgeText = "${AnimeCatalog.list.size}",
+                        c1 = "#F97316",
+                        c2 = "#EA580C"
+                    ).apply { setPadding(0, dp(4), 0, dp(10)) }
+                )
+                renderAllAnimeGrid()
+            }
+
+            else -> {
+                val catItems = CategoryCatalog.itemsForCategory(selectedCat)
+                col.addView(
+                    UiTheme.sectionHeader(
+                        act = act,
+                        icon = catIcon(selectedCat),
+                        title = selectedCat.label(),
+                        badgeText = "${catItems.size}",
+                        c1 = "#0EA5E9",
+                        c2 = "#2563EB"
+                    ).apply { setPadding(0, dp(2), 0, dp(10)) }
+                )
+                renderTopicGrid(catItems)
+
+                val moreBar = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    background = UiTheme.grad(act, "#0EA5E9", "#2563EB", 18)
+                    setPadding(dp(16), dp(14), dp(16), dp(14))
+                    elevation = dp(4).toFloat()
+                    addView(
+                        StudioIcons.imageView(act, StudioIcons.Type.GLOBE, 18, Color.WHITE),
+                        LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(10) }
+                    )
+                    addView(TextView(act).apply {
+                        text = L.t("browse_more_cat")
+                        textSize = 14.5f
+                        UiTheme.applyDisplayFont(this, bold = true)
+                        setTextColor(Color.WHITE)
+                    })
+                    addView(
+                        StudioIcons.imageView(act, StudioIcons.Type.ARROW_RIGHT, 16, Color.WHITE),
+                        LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(10) }
+                    )
+                    UiTheme.bounce(this) {
+                        onBrowseOnline("${selectedCat.label()} black and white sketch drawing")
+                    }
+                }
+                col.addView(moreBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
             }
         }
         return col

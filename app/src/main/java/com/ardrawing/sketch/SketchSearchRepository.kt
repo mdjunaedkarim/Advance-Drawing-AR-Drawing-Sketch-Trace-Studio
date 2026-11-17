@@ -8,8 +8,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Html
 import android.util.LruCache
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
@@ -34,10 +37,14 @@ object SketchSearchRepository {
 
     private val searchExecutor = Executors.newFixedThreadPool(4)
     private val imgExecutor = Executors.newFixedThreadPool(6)
+    private val previewExecutor = Executors.newFixedThreadPool(3)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val queryCache = LruCache<String, List<SketchResult>>(80)
     private val thumbBitmapCache = LruCache<String, Bitmap>(200)
+    private val previewCache = LruCache<String, Bitmap>(180)
+    private val previewUrlCache = ConcurrentHashMap<String, Pair<String, String>>()
+    private val inFlightPreviews = ConcurrentHashMap<String, MutableList<(Bitmap?) -> Unit>>()
 
     private val iuscRegex = Regex("""class="iusc"[^>]*?m="([^"]+)"""")
     private val murlRegex = Regex(""""murl"\s*:\s*"(https?://[^"]+)"""")
@@ -506,7 +513,8 @@ object SketchSearchRepository {
 
         // Cross-franchise negative guard: reject results clearly belonging to a DIFFERENT anime series
         val seriesKey = series.lowercase().trim()
-        if (seriesKey.isNotEmpty()) {
+        val isKnownAnimeSeries = seriesKey.isNotEmpty() && seriesAliases.containsKey(seriesKey)
+        if (isKnownAnimeSeries) {
             val ownAliases = seriesAliases[seriesKey] ?: listOf(seriesKey)
             val mentionsOwnSeries = ownAliases.any { combined.contains(it) }
             if (!mentionsOwnSeries) {
@@ -533,13 +541,17 @@ object SketchSearchRepository {
             return -1
         }
 
-        val ownSeriesAliases = seriesAliases[seriesKey] ?: extractNameTokens(series)
+        val ownSeriesAliases = if (isKnownAnimeSeries) {
+            seriesAliases[seriesKey] ?: extractNameTokens(series)
+        } else {
+            emptyList()
+        }
         val hasSeriesMatch = ownSeriesAliases.any { combined.contains(it) }
 
         // If all matched character tokens are common/ambiguous words (King, Scar, Rem, Tank, Power, Franklin, etc.),
         // strictly require the anime series name to appear in title/URL so wrong characters never slip in.
         val allMatchedAmbiguous = matchedCharTokens.isNotEmpty() && matchedCharTokens.all { it in ambiguousCharWords }
-        if (allMatchedAmbiguous && seriesKey.isNotEmpty() && !hasSeriesMatch) {
+        if (isKnownAnimeSeries && allMatchedAmbiguous && !hasSeriesMatch) {
             return -1
         }
 
@@ -645,6 +657,133 @@ object SketchSearchRepository {
                 ImageProcessor.toCleanBwSketch(argb)
             } ?: thumbBitmapCache.get(item.thumbUrl.ifEmpty { item.fullUrl })
             mainHandler.post { onLoaded(clean) }
+        }
+    }
+
+    fun loadTopicPreviewBitmap(
+        ctx: Context,
+        item: CategoryCatalog.TopicItem,
+        onLoaded: (Bitmap?) -> Unit
+    ) {
+        if (item.localSample != null) {
+            onLoaded(Samples.loadThumb(ctx, item.localSample, 360))
+            return
+        }
+        val key = item.id
+        previewCache.get(key)?.let {
+            onLoaded(it)
+            return
+        }
+
+        val cacheDir = File(ctx.filesDir, "bw_previews").apply { if (!exists()) mkdirs() }
+        val cacheFile = File(cacheDir, "${key.replace(Regex("[^a-zA-Z0-9_]"), "_")}.png")
+
+        val waiters = inFlightPreviews.computeIfAbsent(key) { java.util.Collections.synchronizedList(ArrayList()) }
+        val isFirst = synchronized(waiters) {
+            val empty = waiters.isEmpty()
+            waiters.add(onLoaded)
+            empty
+        }
+        if (!isFirst) return
+
+        previewExecutor.execute {
+            var result: Bitmap? = null
+            try {
+                if (cacheFile.exists() && cacheFile.length() > 100L) {
+                    BitmapFactory.decodeFile(cacheFile.absolutePath)?.let { decoded ->
+                        result = decoded
+                    }
+                }
+                if (result == null) {
+                    val subjectChar = item.characterName.ifEmpty { item.title }
+                    val subjectSeries = item.seriesName
+                    val q = item.searchQuery.trim()
+                    val candidates = ArrayList<Candidate>()
+                    candidates.addAll(fetchGoogleBasicBwCandidates("$q black and white line art drawing", subjectChar, subjectSeries))
+                    if (candidates.size < 4) {
+                        candidates.addAll(fetchBingBwCandidates("$q line art sketch", subjectChar, subjectSeries, lineArtFilter = true))
+                    }
+                    if (candidates.isEmpty()) {
+                        candidates.addAll(fetchBingBwCandidates("$q coloring page outline", subjectChar, subjectSeries, lineArtFilter = false))
+                    }
+                    val ranked = mergeAndRankCandidates(candidates).take(8)
+                    for (cand in ranked) {
+                        val raw = fetchBitmapFromUrl(cand.thumbUrl, maxDim = 540)
+                            ?: fetchBitmapFromUrl(cand.fullUrl, maxDim = 540)
+                            ?: continue
+                        if (raw.width < 85 || raw.height < 85) continue
+                        val ratio = maxOf(raw.width, raw.height).toFloat() / minOf(raw.width, raw.height).toFloat()
+                        if (ratio > 3.2f) continue
+                        if (!ImageProcessor.isLikelyBwDrawing(raw)) continue
+                        val clean = ImageProcessor.toCleanBwSketch(raw)
+                        previewUrlCache[key] = cand.fullUrl to cand.thumbUrl
+                        try {
+                            FileOutputStream(cacheFile).use { clean.compress(Bitmap.CompressFormat.PNG, 92, it) }
+                        } catch (_: Throwable) {}
+                        result = clean
+                        break
+                    }
+                }
+            } catch (_: Throwable) {}
+
+            result?.let { previewCache.put(key, it) }
+            val callbacks = inFlightPreviews.remove(key)?.let { list -> synchronized(list) { list.toList() } } ?: emptyList()
+            mainHandler.post {
+                callbacks.forEach { cb -> cb(result) }
+            }
+        }
+    }
+
+    fun loadTopicFullForEditor(
+        ctx: Context,
+        item: CategoryCatalog.TopicItem,
+        onLoaded: (Bitmap?) -> Unit
+    ) {
+        if (item.localSample != null) {
+            onLoaded(Samples.loadFull(ctx, item.localSample))
+            return
+        }
+        imgExecutor.execute {
+            val urls = previewUrlCache[item.id]
+            var fullBmp: Bitmap? = null
+            if (urls != null) {
+                val (fullUrl, thumbUrl) = urls
+                val hdThumb = thumbUrl.replace("&w=540", "&w=960").replace("&w=480", "&w=960")
+                val raw = fetchBitmapFromUrl(fullUrl, maxDim = 1440)
+                    ?: fetchBitmapFromUrl(hdThumb, maxDim = 1440)
+                    ?: fetchBitmapFromUrl(thumbUrl, maxDim = 1440)
+                fullBmp = raw?.let {
+                    val argb = if (it.config == Bitmap.Config.ARGB_8888) it else it.copy(Bitmap.Config.ARGB_8888, false)
+                    ImageProcessor.toCleanBwSketch(argb)
+                }
+            }
+            if (fullBmp == null) {
+                // If tapped before preview cached or network restricted, run fast targeted fetch
+                val subjectChar = item.characterName.ifEmpty { item.title }
+                val subjectSeries = item.seriesName
+                val q = item.searchQuery.trim()
+                val candidates = mergeAndRankCandidates(
+                    fetchGoogleBasicBwCandidates("$q black and white line art drawing", subjectChar, subjectSeries) +
+                        fetchBingBwCandidates("$q line art sketch", subjectChar, subjectSeries, lineArtFilter = true)
+                ).take(6)
+                for (cand in candidates) {
+                    val raw = fetchBitmapFromUrl(cand.fullUrl, maxDim = 1280)
+                        ?: fetchBitmapFromUrl(cand.thumbUrl, maxDim = 960)
+                        ?: continue
+                    if (!ImageProcessor.isLikelyBwDrawing(raw)) continue
+                    fullBmp = ImageProcessor.toCleanBwSketch(raw)
+                    previewUrlCache[item.id] = cand.fullUrl to cand.thumbUrl
+                    break
+                }
+            }
+            if (fullBmp == null) {
+                fullBmp = previewCache.get(item.id)
+                if (fullBmp == null) {
+                    val cacheFile = File(File(ctx.filesDir, "bw_previews"), "${item.id.replace(Regex("[^a-zA-Z0-9_]"), "_")}.png")
+                    if (cacheFile.exists()) fullBmp = BitmapFactory.decodeFile(cacheFile.absolutePath)
+                }
+            }
+            mainHandler.post { onLoaded(fullBmp) }
         }
     }
 
