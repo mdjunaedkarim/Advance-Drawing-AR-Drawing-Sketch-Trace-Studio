@@ -328,26 +328,31 @@ object UiTabs {
                     it.character.lowercase().contains(q) ||
                         it.title.lowercase().contains(q)
                 }
-                val prioritizedLocal = directHits
-                    .filter { it.character.lowercase().startsWith(q) }
-                    .ifEmpty { directHits }
-                    .ifEmpty {
-                        Samples.items.filter {
-                            it.series.lowercase().contains(q) ||
-                                it.cat.label().lowercase().contains(q) ||
-                                it.cat.name.lowercase().contains(q)
-                        }.distinctBy { it.character.ifEmpty { it.id.toString() } }
-                    }
+                val bestLocalChar = directHits
+                    .sortedWith(
+                        compareByDescending<Samples.Item> { it.character.equals(normQ, ignoreCase = true) }
+                            .thenByDescending { it.character.lowercase().startsWith(q) }
+                            .thenByDescending { it.character.lowercase().split(" ").any { w -> w.startsWith(q) } }
+                    )
+                    .firstOrNull()
+                    ?.character
+                    ?.takeIf { it.isNotEmpty() }
+
+                val prioritizedLocal = if (bestLocalChar != null) {
+                    Samples.byCharacter(bestLocalChar)
+                } else {
+                    emptyList()
+                }
 
                 if (prioritizedLocal.isNotEmpty()) {
                     val fiveLocal = SketchSearchRepository.pickDiverseLocalFive(prioritizedLocal)
                     fiveLocal.forEach { addSketchResultRow(it) }
                     val targetMore = catHits.firstOrNull()?.let { "${it.first} ${it.second}" }
-                        ?: prioritizedLocal.firstOrNull()?.character?.ifEmpty { normQ }
+                        ?: bestLocalChar
                         ?: normQ
                     addMorePhotosButton(targetMore)
                     val remainingCatalog = catHits.filter { (ch, _) ->
-                        !ch.equals(prioritizedLocal.firstOrNull()?.character, ignoreCase = true)
+                        !ch.equals(bestLocalChar, ignoreCase = true)
                     }
                     addCatalogChips(remainingCatalog)
                     return
@@ -358,6 +363,12 @@ object UiTabs {
                 val targetSeries = catHits.firstOrNull()?.second ?: ""
 
                 addCatalogChips(catHits)
+                val moreQuery = SketchSearchRepository.cleanSearchQuery(targetChar, targetSeries)
+                if (q.length < 2) {
+                    addMorePhotosButton(moreQuery)
+                    return
+                }
+
                 val loadingRow = LinearLayout(act).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
@@ -372,7 +383,7 @@ object UiTabs {
                     })
                 }
                 suggestCol.addView(loadingRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
-                addMorePhotosButton(if (targetSeries.isNotEmpty()) "$targetChar $targetSeries" else targetChar)
+                addMorePhotosButton(moreQuery)
 
                 val runnable = Runnable {
                     SketchSearchRepository.getFiveSketches(targetChar, targetSeries) { results ->
@@ -391,7 +402,7 @@ object UiTabs {
                         } else {
                             results.take(5).forEach { addSketchResultRow(it, targetSeries) }
                         }
-                        addMorePhotosButton(if (targetSeries.isNotEmpty()) "$targetChar $targetSeries" else targetChar)
+                        addMorePhotosButton(moreQuery)
                     }
                 }
                 pendingSearchRunnable = runnable
@@ -898,7 +909,7 @@ object UiTabs {
                                 textSizeSp = 12f
                             )
                         )
-                        UiTheme.bounce(this) { onBrowseOnline("$t easy line drawing") }
+                        UiTheme.bounce(this) { onBrowseOnline("$t black and white sketch drawing") }
                     }
                     col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
                 }

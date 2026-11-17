@@ -246,7 +246,8 @@ object Samples {
                 inSampleSize = s
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            ctx.assets.open(assetPath).use { BitmapFactory.decodeStream(it, null, dec) }
+            val raw = ctx.assets.open(assetPath).use { BitmapFactory.decodeStream(it, null, dec) } ?: return null
+            ImageProcessor.toCleanBwSketch(raw)
         } catch (_: Exception) {
             null
         }

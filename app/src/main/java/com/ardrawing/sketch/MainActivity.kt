@@ -747,7 +747,8 @@ class MainActivity : ComponentActivity() {
         val cardW = (resources.displayMetrics.widthPixels - dp(44)) / 2
 
         fun openMorePhotosBrowser() {
-            browserQuery = listOf(selectedCharacterName, selectedCharacterSeries, "black and white sketch drawing")
+            val subject = SketchSearchRepository.cleanSearchQuery(selectedCharacterName, selectedCharacterSeries)
+            browserQuery = listOf(subject, "black and white sketch drawing")
                 .filter { it.isNotEmpty() }
                 .joinToString(" ")
             browserReturnFlow = Flow.CHAR_GALLERY
@@ -994,8 +995,11 @@ class MainActivity : ComponentActivity() {
 
     private fun buildBingImagesUrl(query: String): String {
         val q = query.trim().ifEmpty { "Anime black and white sketch drawing" }
-        val bwParam = if (q.contains("black and white", ignoreCase = true) || q.contains("sketch", ignoreCase = true)) "&qft=+filterui:color2-bw" else ""
-        return "https://www.bing.com/images/search?q=${Uri.encode(q)}$bwParam"
+        val isSketch = q.contains("black and white", ignoreCase = true) ||
+            q.contains("sketch", ignoreCase = true) ||
+            q.contains("drawing", ignoreCase = true)
+        val tbs = if (isSketch) "&tbs=ic:gray" else ""
+        return "https://www.google.com/search?tbm=isch&q=${Uri.encode(q)}$tbs"
     }
 
     private fun openInChrome(query: String) {
@@ -1138,7 +1142,7 @@ class MainActivity : ComponentActivity() {
                                         fullUrl = u.searchParams.get('imgurl') || '';
                                     } catch(err) {}
                                 }
-                                var thumbUrl = (img && img.src) ? img.src : '';
+                                var thumbUrl = (img && (img.getAttribute('data-src') || img.getAttribute('data-iurl') || img.currentSrc || img.src)) || '';
                                 if ((fullUrl || thumbUrl) && (!img || (img.naturalWidth > 55 && img.naturalHeight > 55))) {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -1182,8 +1186,17 @@ class MainActivity : ComponentActivity() {
         ioExecutor.execute {
             val bmp = decodeRemoteImage(fullUrl) ?: decodeRemoteImage(thumbUrl)
             if (bmp != null) {
-                val clean = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
-                saveToGallery(clean, "Bing")
+                val argb = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
+                val clean = if (
+                    browserQuery.contains("sketch", ignoreCase = true) ||
+                    browserQuery.contains("black and white", ignoreCase = true) ||
+                    browserQuery.contains("drawing", ignoreCase = true)
+                ) {
+                    ImageProcessor.toCleanBwSketch(argb)
+                } else {
+                    argb
+                }
+                saveToGallery(clean, "Google")
                 runOnUiThread { destroyWebView(); openEditorWithBitmap(clean) }
             } else {
                 runOnUiThread { Toast.makeText(this, L.t("import_fail"), Toast.LENGTH_SHORT).show() }

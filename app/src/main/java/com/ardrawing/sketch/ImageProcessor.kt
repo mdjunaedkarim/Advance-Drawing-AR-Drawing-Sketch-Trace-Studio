@@ -348,4 +348,114 @@ object ImageProcessor {
         }
         return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
     }
+
+    /**
+     * Checks whether a bitmap looks like a real sketch / line-art drawing on light paper
+     * rather than a full-color game screenshot, 3D render, or dark photo.
+     */
+    fun isLikelyBwDrawing(src: Bitmap): Boolean {
+        val w = src.width
+        val h = src.height
+        if (w < 80 || h < 80) return false
+        val stepX = (w / 48).coerceAtLeast(1)
+        val stepY = (h / 48).coerceAtLeast(1)
+        var total = 0
+        var vivid = 0
+        var lightPaper = 0
+        var darkInk = 0
+
+        var y = 0
+        while (y < h) {
+            var x = 0
+            while (x < w) {
+                val c = src.getPixel(x, y)
+                val a = Color.alpha(c)
+                if (a < 30) {
+                    lightPaper++
+                } else {
+                    val r = Color.red(c)
+                    val g = Color.green(c)
+                    val b = Color.blue(c)
+                    val lum = (r * 299 + g * 587 + b * 114) / 1000
+                    val sat = max(r, max(g, b)) - min(r, min(g, b))
+                    if (sat > 42 && lum < 235) vivid++
+                    if (lum >= 195) lightPaper++
+                    if (lum < 85) darkInk++
+                }
+                total++
+                x += stepX
+            }
+            y += stepY
+        }
+        if (total == 0) return false
+        val vividRatio = vivid.toFloat() / total
+        val lightRatio = lightPaper.toFloat() / total
+        val darkRatio = darkInk.toFloat() / total
+
+        // Reject colorful photos/game screenshots and dark scenes with no paper background
+        if (vividRatio > 0.25f && lightRatio < 0.35f) return false
+        if (vividRatio > 0.42f) return false
+        if (lightRatio < 0.14f && darkRatio > 0.55f) return false
+        return true
+    }
+
+    /**
+     * Ensures a sketch bitmap is pure black-and-white monochrome (no mixed color tints)
+     * with clean white paper highlights while preserving pencil shading and crisp dark lines.
+     */
+    fun toCleanBwSketch(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+
+        var hasColor = false
+        val step = (px.size / 4096).coerceAtLeast(1)
+        var i = 0
+        while (i < px.size) {
+            val c = px[i]
+            if (Color.alpha(c) > 20) {
+                val r = Color.red(c)
+                val g = Color.green(c)
+                val b = Color.blue(c)
+                if (max(r, max(g, b)) - min(r, min(g, b)) > 10) {
+                    hasColor = true
+                    break
+                }
+            }
+            i += step
+        }
+        if (!hasColor) {
+            // Double check full array quickly if sample didn't catch small colored spots
+            for (c in px) {
+                if (Color.alpha(c) > 20) {
+                    val r = Color.red(c)
+                    val g = Color.green(c)
+                    val b = Color.blue(c)
+                    if (max(r, max(g, b)) - min(r, min(g, b)) > 12) {
+                        hasColor = true
+                        break
+                    }
+                }
+            }
+        }
+        if (!hasColor) return src
+
+        for (idx in px.indices) {
+            val c = px[idx]
+            val a = Color.alpha(c)
+            if (a == 0) continue
+            val r = Color.red(c)
+            val g = Color.green(c)
+            val b = Color.blue(c)
+            val lum = (r * 299 + g * 587 + b * 114) / 1000
+            val gray = when {
+                lum >= 238 -> 255
+                lum <= 32 -> (lum * 0.85f).toInt().coerceIn(0, 255)
+                else -> lum
+            }
+            px[idx] = (a shl 24) or (gray shl 16) or (gray shl 8) or gray
+        }
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+    }
 }
