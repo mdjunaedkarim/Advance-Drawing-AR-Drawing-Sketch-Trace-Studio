@@ -34,6 +34,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -81,7 +82,7 @@ import java.util.zip.ZipOutputStream
 class MainActivity : ComponentActivity() {
 
     private enum class Tab { HOME, GALLERY, STORE, SETTINGS }
-    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, CONGRATS }
+    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, LIGHTBOX, CONGRATS }
 
     private var flow = Flow.SPLASH
     private var currentTab = Tab.HOME
@@ -107,6 +108,8 @@ class MainActivity : ComponentActivity() {
     private var pickedTouchY = -1f
     private var opacityPercent = 80
     private var brightnessPercent = 80
+    private var isLightboxLocked = false
+    private var openLightboxAfterPick = false
 
     private var selectedSeries: AnimeCatalog.Series = AnimeCatalog.list[0]
     private var selectedCharacterName = ""
@@ -142,7 +145,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val pickGalleryLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) handlePickedUri(uri)
+        if (uri != null) handlePickedUri(uri) else openLightboxAfterPick = false
     }
     private val pickAnyFileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) handleImportFileUri(uri)
@@ -188,6 +191,12 @@ class MainActivity : ComponentActivity() {
                 when (flow) {
                     Flow.SPLASH -> {}
                     Flow.CAMERA -> { stopCamera(); showFlow(Flow.EDITOR) }
+                    Flow.LIGHTBOX -> {
+                        if (!isLightboxLocked) {
+                            restoreWindowDefaults()
+                            showFlow(if (originalBitmap != null) Flow.EDITOR else Flow.MAIN)
+                        }
+                    }
                     Flow.CHAR_GALLERY -> showFlow(charGalleryReturnFlow)
                     Flow.BROWSER -> {
                         val wv = activeWebView
@@ -295,6 +304,10 @@ class MainActivity : ComponentActivity() {
     private fun showFlow(target: Flow) {
         applyInsetsCallback = null
         if (flow == Flow.CAMERA && target != Flow.CAMERA) stopCamera()
+        if (flow == Flow.LIGHTBOX && target != Flow.LIGHTBOX) {
+            isLightboxLocked = false
+            restoreWindowDefaults()
+        }
         if (flow == Flow.BROWSER && target != Flow.BROWSER) destroyWebView()
         flow = target
         when (target) {
@@ -306,9 +319,26 @@ class MainActivity : ComponentActivity() {
             Flow.BROWSER -> renderBrowser()
             Flow.EDITOR -> renderEditor()
             Flow.CAMERA -> renderCamera()
+            Flow.LIGHTBOX -> renderLightbox()
             Flow.CONGRATS -> renderCongrats()
             Flow.SPLASH -> showSplash()
         }
+    }
+
+    private fun openDirectBingForCharacter(character: String, series: String, returnFlow: Flow) {
+        val subject = SketchSearchRepository.cleanSearchQuery(character, series)
+        browserQuery = listOf(subject, "black and white sketch drawing")
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+        browserReturnFlow = returnFlow
+        showFlow(Flow.BROWSER)
+    }
+
+    private fun restoreWindowDefaults() {
+        try {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.attributes = window.attributes.apply { screenBrightness = -1f }
+        } catch (_: Throwable) {}
     }
 
     private fun renderMain() {
@@ -386,17 +416,13 @@ class MainActivity : ComponentActivity() {
                 this,
                 { showCuteSourcePopup() },
                 { openCamCapture() },
-                { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") },
+                { importToGalleryMode = false; openLightboxAfterPick = false; pickGalleryLauncher.launch("image/*") },
                 { currentTab = Tab.GALLERY; renderMain() },
+                { importToGalleryMode = false; openLightboxAfterPick = true; pickGalleryLauncher.launch("image/*") },
                 { openEditorWithBitmap(it) },
                 { q -> browserQuery = q; browserReturnFlow = Flow.MAIN; showFlow(Flow.BROWSER) },
                 { series -> selectedSeries = series; showFlow(Flow.ANIME_CHARS) },
-                { ch, series ->
-                    selectedCharacterName = ch
-                    selectedCharacterSeries = series
-                    charGalleryReturnFlow = Flow.MAIN
-                    showFlow(Flow.CHAR_GALLERY)
-                },
+                { ch, series -> openDirectBingForCharacter(ch, series, Flow.MAIN) },
                 { renderMain() }
             )
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { showCuteImportPopup() }, { exportZipFiles(it) }, { openEditorWithBitmap(it) }, { renderMain() })
@@ -580,52 +606,31 @@ class MainActivity : ComponentActivity() {
                         UiTheme.applyDisplayFont(this, bold = true)
                         setTextColor(UiTheme.textMain)
                     })
-                    if (bundled.isNotEmpty()) {
-                        nameCol.addView(TextView(this@MainActivity).apply {
-                            text = "${bundled.size} ${L.t("sketches_ready").replace("{n}", bundled.size.toString()).substringAfter(" ")}"
-                            textSize = 11f
-                            UiTheme.applyUiFont(this, bold = true)
-                            setTextColor(UiTheme.accentBright)
-                        })
-                    }
+                    nameCol.addView(TextView(this@MainActivity).apply {
+                        text = selectedSeries.name
+                        textSize = 11f
+                        UiTheme.applyUiFont(this, bold = false)
+                        setTextColor(UiTheme.textSub)
+                    })
                     addView(nameCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
 
-                    if (bundled.isNotEmpty()) {
-                        addView(
-                            StudioIcons.iconPill(
-                                context = this@MainActivity,
-                                iconType = StudioIcons.Type.ARROW_RIGHT,
-                                label = "${bundled.size}",
-                                textColor = Color.WHITE,
-                                iconColor = Color.WHITE,
-                                iconSizeDp = 12,
-                                textSizeSp = 12f
-                            ).apply {
-                                background = UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 10)
-                                setPadding(dp(11), dp(6), dp(11), dp(6))
-                            }
-                        )
-                    } else {
-                        addView(
-                            StudioIcons.iconPill(
-                                context = this@MainActivity,
-                                iconType = StudioIcons.Type.SEARCH,
-                                label = L.t("search_btn").replace("›", "").trim(),
-                                textColor = UiTheme.accentBright,
-                                iconColor = UiTheme.accentBright,
-                                iconSizeDp = 13,
-                                textSizeSp = 12f
-                            ).apply {
-                                background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 10)
-                                setPadding(dp(9), dp(5), dp(9), dp(5))
-                            }
-                        )
-                    }
+                    addView(
+                        StudioIcons.iconPill(
+                            context = this@MainActivity,
+                            iconType = StudioIcons.Type.GLOBE,
+                            label = L.t("bing_pill"),
+                            textColor = Color.WHITE,
+                            iconColor = Color.WHITE,
+                            iconSizeDp = 12,
+                            textSizeSp = 11.5f,
+                            trailingIcon = StudioIcons.Type.ARROW_RIGHT
+                        ).apply {
+                            background = UiTheme.grad(this@MainActivity, "#0EA5E9", "#2563EB", 10)
+                            setPadding(dp(10), dp(6), dp(10), dp(6))
+                        }
+                    )
                     UiTheme.bounce(this) {
-                        selectedCharacterName = ch
-                        selectedCharacterSeries = selectedSeries.name
-                        charGalleryReturnFlow = Flow.ANIME_CHARS
-                        showFlow(Flow.CHAR_GALLERY)
+                        openDirectBingForCharacter(ch, selectedSeries.name, Flow.ANIME_CHARS)
                     }
                 }
                 listCol.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
@@ -639,7 +644,7 @@ class MainActivity : ComponentActivity() {
                     background = UiTheme.round(this@MainActivity, UiTheme.surface, 16, UiTheme.accentBright)
                     setPadding(dp(14), dp(12), dp(14), dp(12))
                     addView(
-                        StudioIcons.imageView(this@MainActivity, StudioIcons.Type.SEARCH, 18, UiTheme.accentBright),
+                        StudioIcons.imageView(this@MainActivity, StudioIcons.Type.GLOBE, 18, UiTheme.accentBright),
                         LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(10) }
                     )
                     addView(TextView(this@MainActivity).apply {
@@ -651,22 +656,20 @@ class MainActivity : ComponentActivity() {
                     addView(
                         StudioIcons.iconPill(
                             context = this@MainActivity,
-                            iconType = StudioIcons.Type.ARROW_RIGHT,
-                            label = "5",
+                            iconType = StudioIcons.Type.GLOBE,
+                            label = L.t("bing_pill"),
                             textColor = Color.WHITE,
                             iconColor = Color.WHITE,
                             iconSizeDp = 12,
-                            textSizeSp = 11f
+                            textSizeSp = 11.5f,
+                            trailingIcon = StudioIcons.Type.ARROW_RIGHT
                         ).apply {
-                            background = UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 10)
+                            background = UiTheme.grad(this@MainActivity, "#0EA5E9", "#2563EB", 10)
                             setPadding(dp(10), dp(5), dp(10), dp(5))
                         }
                     )
                     UiTheme.bounce(this) {
-                        selectedCharacterName = customChar
-                        selectedCharacterSeries = selectedSeries.name
-                        charGalleryReturnFlow = Flow.ANIME_CHARS
-                        showFlow(Flow.CHAR_GALLERY)
+                        openDirectBingForCharacter(customChar, selectedSeries.name, Flow.ANIME_CHARS)
                     }
                 }
                 listCol.addView(customRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
@@ -1263,7 +1266,7 @@ class MainActivity : ComponentActivity() {
             UiTheme.bounce(this) { root.removeView(backdrop); onTap() }
         }
         row.addView(optBtn(StudioIcons.Type.CAMERA, L.t("take_photo"), "#8B5CF6", "#6D28D9") { openCamCapture() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(12) })
-        row.addView(optBtn(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; pickGalleryLauncher.launch("image/*") }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        row.addView(optBtn(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; openLightboxAfterPick = false; pickGalleryLauncher.launch("image/*") }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         card.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
         card.addView(
             UiTheme.studioSoftAction(
@@ -1544,6 +1547,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openCamCapture() {
         importToGalleryMode = false
+        openLightboxAfterPick = false
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchTakePhoto()
         else { openCameraAfterPermission = true; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
     }
@@ -1560,6 +1564,20 @@ class MainActivity : ComponentActivity() {
         brightnessPercent = 80
         opacityPercent = 80
         showFlow(Flow.EDITOR)
+    }
+
+    private fun openLightboxDirectly(bmp: Bitmap) {
+        originalBitmap = bmp
+        cutoutBitmap = null
+        editHistory.clear()
+        bgRemoved = false
+        isColorPickMode = false
+        pickedColor = null
+        pickedTouchX = -1f
+        pickedTouchY = -1f
+        opacityPercent = 90
+        brightnessPercent = 140
+        showFlow(Flow.LIGHTBOX)
     }
 
     private fun createCheckerDrawable(): BitmapDrawable {
@@ -1984,22 +2002,92 @@ class MainActivity : ComponentActivity() {
         })
         col.addView(opCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
-        val startArBtn = UiTheme.studioGradientAction(
-            act = this,
+        col.addView(TextView(this).apply {
+            text = L.t("choose_draw_system")
+            textSize = 14f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(UiTheme.textMain)
+            setPadding(dp(2), 0, 0, dp(8))
+        })
+
+        fun drawModeCard(
+            icon: StudioIcons.Type,
+            title: String,
+            sub: String,
+            c1: String,
+            c2: String,
+            onTap: () -> Unit
+        ): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.grad(this@MainActivity, c1, c2, 18, Color.parseColor("#33FFFFFF"))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            elevation = dp(5).toFloat()
+            val well = FrameLayout(this@MainActivity).apply {
+                background = UiTheme.round(this@MainActivity, Color.parseColor("#2AFFFFFF"), 14)
+                addView(
+                    StudioIcons.imageView(this@MainActivity, icon, 22, Color.WHITE),
+                    FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                )
+            }
+            addView(well, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
+            val tc = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            tc.addView(TextView(this@MainActivity).apply {
+                text = title
+                textSize = 15f
+                UiTheme.applyDisplayFont(this, true)
+                setTextColor(Color.WHITE)
+            })
+            tc.addView(TextView(this@MainActivity).apply {
+                text = sub
+                textSize = 11.5f
+                UiTheme.applyUiFont(this)
+                setTextColor(Color.parseColor("#E2E8F0"))
+            })
+            addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+            addView(
+                StudioIcons.imageView(this@MainActivity, StudioIcons.Type.ARROW_RIGHT, 18, Color.WHITE),
+                LinearLayout.LayoutParams(dp(18), dp(18))
+            )
+            UiTheme.bounce(this, onTap)
+        }
+
+        val cameraModeBtn = drawModeCard(
             icon = StudioIcons.Type.CAMERA,
-            label = L.t("next"),
-            hex1 = "#10B981",
-            hex2 = "#059669",
-            rDp = 18,
-            trailingIcon = StudioIcons.Type.ARROW_RIGHT,
-            iconSizeDp = 19,
-            textSizeSp = 15f
+            title = L.t("mode_camera"),
+            sub = L.t("mode_camera_sub"),
+            c1 = "#10B981",
+            c2 = "#059669"
         ) {
             if (originalBitmap == null) Toast.makeText(this, L.t("need_image"), Toast.LENGTH_SHORT).show()
-            else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) showFlow(Flow.CAMERA)
-            else { openCameraAfterPermission = false; cameraPermLauncher.launch(Manifest.permission.CAMERA) }
+            else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                brightnessPercent = brightnessPercent.coerceIn(10, 100)
+                showFlow(Flow.CAMERA)
+            } else {
+                openCameraAfterPermission = false
+                cameraPermLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
-        col.addView(startArBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(54)).apply { bottomMargin = dp(12) })
+        col.addView(cameraModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+        val lightboxModeBtn = drawModeCard(
+            icon = StudioIcons.Type.SUN,
+            title = L.t("mode_lightbox"),
+            sub = L.t("mode_lightbox_sub"),
+            c1 = "#0EA5E9",
+            c2 = "#2563EB"
+        ) {
+            if (originalBitmap == null) {
+                importToGalleryMode = false
+                openLightboxAfterPick = true
+                pickGalleryLauncher.launch("image/*")
+            } else {
+                if (brightnessPercent < 100) brightnessPercent = 140
+                showFlow(Flow.LIGHTBOX)
+            }
+        }
+        col.addView(lightboxModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+
         root.addView(ScrollView(this).apply { addView(col) }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         applyInsetsCallback = {
             col.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(16))
@@ -2279,6 +2367,282 @@ class MainActivity : ComponentActivity() {
         startCamera(previewView)
     }
 
+    // ---------------- SYSTEM 2: SCREEN / DISPLAY LIGHTBOX TRACING ----------------
+    @SuppressLint("ClickableViewAccessibility")
+    private fun renderLightbox() {
+        updateSystemBarsAppearance(true)
+        root.removeAllViews()
+        isLightboxLocked = false
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        var activeBmp = (if (bgRemoved && cutoutBitmap != null) cutoutBitmap else originalBitmap) ?: return
+        brightnessPercent = brightnessPercent.coerceIn(10, 200)
+
+        val whiteCanvas = View(this).apply { setBackgroundColor(Color.WHITE) }
+        val overlay = OverlayView(this).apply {
+            setBitmap(activeBmp, true)
+            setOpacity(opacityPercent)
+        }
+        overlayView = overlay
+
+        val glassFill = Color.parseColor("#E60F172A")
+        val glassStroke = Color.parseColor("#33FFFFFF")
+        val topPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.round(this@MainActivity, glassFill, 26, glassStroke)
+            elevation = dp(8).toFloat()
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        fun pillIconBtn(
+            icon: StudioIcons.Type,
+            tint: Int = Color.WHITE,
+            filled: Boolean = false,
+            desc: String = "",
+            onTap: (FrameLayout, ImageView) -> Unit
+        ): FrameLayout {
+            val wrap = FrameLayout(this).apply {
+                contentDescription = desc
+                isClickable = true
+                isFocusable = true
+            }
+            val iv = StudioIcons.imageView(this, icon, 20, tint, filled)
+            wrap.addView(iv, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+            UiTheme.bounce(wrap) { onTap(wrap, iv) }
+            return wrap
+        }
+
+        // Top-Left Capsule (4 actions) + Separate Lock Button (Button #5) above touch blocker
+        topPill.addView(
+            pillIconBtn(StudioIcons.Type.CLOSE, Color.WHITE, desc = L.t("back")) { _, _ ->
+                restoreWindowDefaults()
+                showFlow(if (originalBitmap != null) Flow.EDITOR else Flow.MAIN)
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44))
+        )
+        topPill.addView(
+            pillIconBtn(StudioIcons.Type.FLIP_H, Color.WHITE, desc = "Flip") { _, _ ->
+                if (isLightboxLocked) return@pillIconBtn
+                val m = Matrix().apply { postScale(-1f, 1f) }
+                activeBmp = Bitmap.createBitmap(activeBmp, 0, 0, activeBmp.width, activeBmp.height, m, true)
+                overlay.setBitmap(activeBmp, resetPos = false)
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44))
+        )
+        topPill.addView(
+            pillIconBtn(StudioIcons.Type.GRID, Color.WHITE, desc = "Grid") { wrap, iv ->
+                if (isLightboxLocked) return@pillIconBtn
+                val next = !overlay.gridEnabled
+                overlay.setGridEnabled(next)
+                iv.setImageDrawable(
+                    StudioIcons.icon(
+                        this,
+                        StudioIcons.Type.GRID,
+                        20,
+                        if (next) Color.parseColor("#38BDF8") else Color.WHITE
+                    )
+                )
+                wrap.background = if (next) UiTheme.round(this, Color.parseColor("#3338BDF8"), 14) else null
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44))
+        )
+        topPill.addView(
+            pillIconBtn(StudioIcons.Type.CHECK, Color.parseColor("#34D399"), desc = L.t("save")) { _, _ ->
+                if (isLightboxLocked) return@pillIconBtn
+                saveToGallery(activeBmp, L.t("art_prefix"))
+                restoreWindowDefaults()
+                billingAds.showRewardedOnComplete(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44))
+        )
+
+        val hintPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#D90F172A"), 14, glassStroke)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+        }
+        val hintDot = View(this).apply {
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#FBBF24"), 5)
+        }
+        val hintTv = TextView(this).apply {
+            text = L.t("lightbox_hint")
+            setTextColor(Color.WHITE)
+            textSize = 11.5f
+            UiTheme.applyUiFont(this, true)
+        }
+        hintPill.addView(hintDot, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
+        hintPill.addView(hintTv)
+
+        val bottomCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#E60F172A"), 24, glassStroke)
+            elevation = dp(10).toFloat()
+            setPadding(dp(16), dp(12), dp(16), dp(14))
+        }
+
+        val opRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        opRow.addView(StudioIcons.imageView(this, StudioIcons.Type.DROPLET, 16, Color.parseColor("#A78BFA")), LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
+        val opTv = TextView(this).apply {
+            text = "${L.t("opacity")}  $opacityPercent%"
+            fontFeatureSettings = "tnum"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            UiTheme.applyDisplayFont(this, true)
+        }
+        opRow.addView(opTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        val resetPosChip = StudioIcons.iconPill(
+            context = this,
+            iconType = StudioIcons.Type.RESET_POS,
+            label = L.t("reset_crop"),
+            textColor = Color.WHITE,
+            iconColor = Color.parseColor("#CBD5E1"),
+            iconSizeDp = 13,
+            textSizeSp = 11.5f
+        ).apply {
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#24FFFFFF"), 10, Color.parseColor("#33FFFFFF"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            UiTheme.bounce(this) {
+                if (!isLightboxLocked) overlay.resetPosition()
+            }
+        }
+        opRow.addView(resetPosChip)
+        bottomCard.addView(opRow)
+        bottomCard.addView(SeekBar(this).apply {
+            max = 100; progress = opacityPercent
+            setOnSeekBarChangeListener(simpleSeek { p ->
+                if (isLightboxLocked) return@simpleSeek
+                opacityPercent = p.coerceAtLeast(10)
+                opTv.text = "${L.t("opacity")}  $opacityPercent%"
+                overlay.setOpacity(opacityPercent)
+            })
+        })
+
+        val brRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(6), 0, 0) }
+        brRow.addView(StudioIcons.imageView(this, StudioIcons.Type.SUN, 16, Color.parseColor("#FBBF24")), LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
+        val brTv = TextView(this).apply {
+            fontFeatureSettings = "tnum"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            UiTheme.applyDisplayFont(this, true)
+        }
+        val boostBadge = TextView(this).apply {
+            text = L.t("brightness_overdrive")
+            textSize = 10.5f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.parseColor("#1E1B4B"))
+            background = UiTheme.grad(this@MainActivity, "#FDE047", "#F59E0B", 9)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+        }
+        brRow.addView(brTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        brRow.addView(boostBadge)
+        bottomCard.addView(brRow)
+
+        fun applyLightboxBrightness(p: Int) {
+            brightnessPercent = p.coerceIn(10, 200)
+            brTv.text = "${L.t("brightness")}  $brightnessPercent%"
+            if (brightnessPercent <= 100) {
+                val hw = (brightnessPercent / 100f).coerceIn(0.08f, 1.0f)
+                window.attributes = window.attributes.apply { screenBrightness = hw }
+                val shade = (115 + ((brightnessPercent - 10) * 140) / 90).coerceIn(115, 255)
+                whiteCanvas.setBackgroundColor(Color.rgb(shade, shade, shade))
+                overlay.setContrastBoost(0f)
+                boostBadge.visibility = View.GONE
+            } else {
+                // 101..200% = Full Hardware Max + Pure White Luminance + 2x Line Contrast Overdrive
+                window.attributes = window.attributes.apply { screenBrightness = 1.0f }
+                whiteCanvas.setBackgroundColor(Color.WHITE)
+                val boost = ((brightnessPercent - 100) / 100f).coerceIn(0.01f, 1.0f)
+                overlay.setContrastBoost(boost)
+                boostBadge.visibility = View.VISIBLE
+            }
+        }
+        applyLightboxBrightness(brightnessPercent)
+
+        bottomCard.addView(SeekBar(this).apply {
+            max = 200; progress = brightnessPercent
+            setOnSeekBarChangeListener(simpleSeek { p ->
+                if (isLightboxLocked) return@simpleSeek
+                applyLightboxBrightness(p)
+            })
+        })
+
+        // Full-Screen Touch Blocker (enabled ONLY when locked — blocks canvas, sliders & all buttons except Lock button)
+        val touchBlocker = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+            isFocusable = true
+            visibility = View.GONE
+            setOnTouchListener { _, _ -> true }
+        }
+
+        // Button #5: Lock / Unlock positioned ABOVE touchBlocker in Z-order so ONLY it responds while locked
+        val lockBtn = FrameLayout(this).apply {
+            background = UiTheme.round(this@MainActivity, glassFill, 24, glassStroke)
+            elevation = dp(16).toFloat()
+            contentDescription = "Lock"
+            isClickable = true
+            isFocusable = true
+        }
+        val lockIv = StudioIcons.imageView(this, StudioIcons.Type.LOCK, 22, Color.WHITE)
+        lockBtn.addView(lockIv, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+
+        UiTheme.bounce(lockBtn) {
+            isLightboxLocked = !isLightboxLocked
+            if (isLightboxLocked) {
+                overlay.lock()
+                touchBlocker.visibility = View.VISIBLE
+                lockIv.setImageDrawable(StudioIcons.icon(this, StudioIcons.Type.UNLOCK, 22, Color.WHITE, filled = true))
+                lockBtn.background = UiTheme.grad(this, "#10B981", "#059669", 24, Color.parseColor("#88FFFFFF"))
+                hintTv.text = L.t("lightbox_locked")
+                hintDot.background = UiTheme.round(this, Color.parseColor("#10B981"), 5)
+                topPill.animate().alpha(0.18f).setDuration(180).start()
+                bottomCard.animate().alpha(0.16f).setDuration(180).start()
+            } else {
+                overlay.unlock()
+                touchBlocker.visibility = View.GONE
+                lockIv.setImageDrawable(StudioIcons.icon(this, StudioIcons.Type.LOCK, 22, Color.WHITE))
+                lockBtn.background = UiTheme.round(this, glassFill, 24, glassStroke)
+                hintTv.text = L.t("lightbox_hint")
+                hintDot.background = UiTheme.round(this, Color.parseColor("#FBBF24"), 5)
+                topPill.animate().alpha(1f).setDuration(180).start()
+                bottomCard.animate().alpha(1f).setDuration(180).start()
+            }
+        }
+
+        val topPillLp = FrameLayout.LayoutParams(WRAP_CONTENT, dp(52), Gravity.TOP or Gravity.START).apply {
+            setMargins(dp(14), safeTop() + dp(8), 0, 0)
+        }
+        val hintLp = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = safeTop() + dp(68)
+        }
+        val bottomLp = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply {
+            setMargins(dp(14), 0, dp(14), safeBottom() + dp(10))
+        }
+        val lockBtnLp = FrameLayout.LayoutParams(dp(50), dp(50), Gravity.TOP or Gravity.END).apply {
+            setMargins(0, safeTop() + dp(9), dp(14), 0)
+        }
+
+        root.addView(whiteCanvas, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        root.addView(topPill, topPillLp)
+        root.addView(hintPill, hintLp)
+        root.addView(bottomCard, bottomLp)
+        root.addView(touchBlocker, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        root.addView(lockBtn, lockBtnLp)
+
+        applyInsetsCallback = {
+            topPillLp.setMargins(dp(14), safeTop() + dp(8), 0, 0)
+            topPill.layoutParams = topPillLp
+            hintLp.topMargin = safeTop() + dp(68)
+            hintPill.layoutParams = hintLp
+            bottomLp.setMargins(dp(14), 0, dp(14), safeBottom() + dp(10))
+            bottomCard.layoutParams = bottomLp
+            lockBtnLp.setMargins(0, safeTop() + dp(9), dp(14), 0)
+            lockBtn.layoutParams = lockBtnLp
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
     private fun renderCongrats() {
         updateSystemBarsAppearance(!UiTheme.isDark)
         root.removeAllViews(); root.setBackgroundColor(UiTheme.bg)
@@ -2379,7 +2743,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopCamera() {
         try { boundCamera?.cameraControl?.enableTorch(false) } catch (_: Exception) {}
-        window.attributes = window.attributes.apply { screenBrightness = -1f }
+        restoreWindowDefaults()
         boundCamera = null; torchOn = false; tracker.stopLock(); cameraProvider?.unbindAll()
         overlayView = null; cameraHintView = null; cameraHintDot = null
     }
@@ -2398,8 +2762,20 @@ class MainActivity : ComponentActivity() {
                 if (maxS > 1080) { val s = 1080f / maxS; d.setTargetSize((info.size.width * s).toInt().coerceAtLeast(1), (info.size.height * s).toInt().coerceAtLeast(1)) }
             }
             val clean = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
-            if (importToGalleryMode) { saveToGallery(clean, "Imported"); renderMain() } else openEditorWithBitmap(clean)
-        } catch (_: Exception) { Toast.makeText(this, L.t("image_failed"), Toast.LENGTH_LONG).show() }
+            if (importToGalleryMode) {
+                openLightboxAfterPick = false
+                saveToGallery(clean, "Imported")
+                renderMain()
+            } else if (openLightboxAfterPick) {
+                openLightboxAfterPick = false
+                openLightboxDirectly(clean)
+            } else {
+                openEditorWithBitmap(clean)
+            }
+        } catch (_: Exception) {
+            openLightboxAfterPick = false
+            Toast.makeText(this, L.t("image_failed"), Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun saveToGallery(bmp: Bitmap?, prefix: String) {

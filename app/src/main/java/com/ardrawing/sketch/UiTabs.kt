@@ -87,6 +87,7 @@ object UiTabs {
         onCameraClick: () -> Unit,
         onGalleryPickClick: () -> Unit,
         onMyActivityClick: () -> Unit,
+        onScreenDrawClick: () -> Unit,
         onSampleClick: (Bitmap) -> Unit,
         onBrowseOnline: (String) -> Unit,
         onOpenAnime: (AnimeCatalog.Series) -> Unit,
@@ -361,55 +362,13 @@ object UiTabs {
                     return
                 }
 
-                // Auto-search strictly 5 B&W sketches from web for any anime character or topic
+                // Direct character suggestions + instant Microsoft Bing Images launch
                 val targetChar = catHits.firstOrNull()?.first ?: normQ
                 val targetSeries = catHits.firstOrNull()?.second ?: ""
 
                 addCatalogChips(catHits)
                 val moreQuery = SketchSearchRepository.cleanSearchQuery(targetChar, targetSeries)
-                if (q.length < 2) {
-                    addMorePhotosButton(moreQuery)
-                    return
-                }
-
-                val loadingRow = LinearLayout(act).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
-                    setPadding(dp(14), dp(12), dp(14), dp(12))
-                    addView(ProgressBar(act).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(10) })
-                    addView(TextView(act).apply {
-                        text = L.t("searching_sketches")
-                        textSize = 13f
-                        UiTheme.applyUiFont(this, bold = true)
-                        setTextColor(UiTheme.textSub)
-                    })
-                }
-                suggestCol.addView(loadingRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
                 addMorePhotosButton(moreQuery)
-
-                val runnable = Runnable {
-                    SketchSearchRepository.getFiveSketches(targetChar, targetSeries) { results ->
-                        if (token != activeQueryToken) return@getFiveSketches
-                        suggestCol.removeAllViews()
-                        addCatalogChips(catHits)
-                        if (results.isEmpty()) {
-                            suggestCol.addView(TextView(act).apply {
-                                text = L.t("no_sketches_found")
-                                textSize = 12.5f
-                                UiTheme.applyUiFont(this)
-                                setTextColor(UiTheme.textSub)
-                                background = UiTheme.round(act, UiTheme.surface, 14, UiTheme.stroke)
-                                setPadding(dp(12), dp(10), dp(12), dp(10))
-                            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
-                        } else {
-                            results.take(5).forEach { addSketchResultRow(it, targetSeries) }
-                        }
-                        addMorePhotosButton(moreQuery)
-                    }
-                }
-                pendingSearchRunnable = runnable
-                searchHandler.postDelayed(runnable, 380)
             }
         })
 
@@ -530,8 +489,9 @@ object UiTabs {
                 UiTheme.bounce(this, onTap)
             }
         }
-        quickTileRow.addView(heroTile(StudioIcons.Type.CAMERA, L.t("take_photo"), onCameraClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-        quickTileRow.addView(heroTile(StudioIcons.Type.PHOTO, L.t("upload_gallery"), onGalleryPickClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.CAMERA, L.t("take_photo"), onCameraClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.PHOTO, L.t("upload_gallery"), onGalleryPickClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.SUN, L.t("screen_trace_short"), onScreenDrawClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
         quickTileRow.addView(heroTile(StudioIcons.Type.FOLDER, L.t("my_activity"), onMyActivityClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         heroCard.addView(quickTileRow)
 
@@ -811,11 +771,10 @@ object UiTabs {
                     row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                     col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
                 }
-                val isAnimeHero = item.cat == Samples.Cat.ANIME && item.characterName.isNotEmpty()
                 val card = buildTopicCard(
                     item = item,
                     imgHeightPx = cardW + dp(4),
-                    countBadge = if (isAnimeHero) "5" else null,
+                    countBadge = null,
                     tagGradHex = null,
                     actionLabel = L.t("trace_now")
                 ) {
@@ -868,11 +827,10 @@ object UiTabs {
                 val spotRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                 val mixedSpot = CategoryCatalog.randomMixedSpotlight(homeShuffleSeed, 14)
                 mixedSpot.forEachIndexed { idx, item ->
-                    val isAnimeHero = item.cat == Samples.Cat.ANIME && item.characterName.isNotEmpty()
                     val card = buildTopicCard(
                         item = item,
                         imgHeightPx = dp(122),
-                        countBadge = if (isAnimeHero) "5" else null,
+                        countBadge = null,
                         tagGradHex = UiTheme.seriesPalette(idx),
                         actionLabel = L.t("trace_now")
                     ) {
@@ -933,7 +891,7 @@ object UiTabs {
                     val card = buildTopicCard(
                         item = item,
                         imgHeightPx = dp(122),
-                        countBadge = "5",
+                        countBadge = null,
                         tagGradHex = UiTheme.seriesPalette(idx),
                         actionLabel = L.t("trace_now")
                     ) {

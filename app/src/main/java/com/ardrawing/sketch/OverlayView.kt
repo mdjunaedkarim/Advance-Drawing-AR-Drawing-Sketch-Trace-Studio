@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.util.AttributeSet
@@ -69,6 +71,26 @@ class OverlayView @JvmOverloads constructor(
 
     fun setOpacity(percent: Int) {
         imageAlpha = (percent.coerceIn(5, 100) * 255) / 100
+        invalidate()
+    }
+
+    fun setContrastBoost(boost: Float) {
+        val b = boost.coerceIn(0f, 1f)
+        if (b <= 0.01f) {
+            paint.colorFilter = null
+        } else {
+            val scale = 1f + b * 0.9f
+            val translate = -128f * b * 0.65f
+            val cm = ColorMatrix(
+                floatArrayOf(
+                    scale, 0f, 0f, 0f, translate,
+                    0f, scale, 0f, 0f, translate,
+                    0f, 0f, scale, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+            paint.colorFilter = ColorMatrixColorFilter(cm)
+        }
         invalidate()
     }
 

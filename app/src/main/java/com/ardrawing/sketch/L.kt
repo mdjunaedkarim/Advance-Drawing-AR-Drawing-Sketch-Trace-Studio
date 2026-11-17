@@ -94,7 +94,17 @@ object L {
         "discover_feed_title" to "Random Sketches Feed",
         "shuffle_btn" to "Shuffle",
         "browse_more_cat" to "More on Microsoft Bing",
-        "explore_chars" to "Characters"
+        "explore_chars" to "Characters",
+        "choose_draw_system" to "Choose Drawing System",
+        "mode_camera" to "Camera AR Drawing",
+        "mode_camera_sub" to "Look through camera & draw",
+        "mode_lightbox" to "Screen Lightbox",
+        "mode_lightbox_sub" to "Place paper on phone display",
+        "screen_trace_short" to "Screen Draw",
+        "lightbox_hint" to "Adjust sketch, then tap Lock before placing paper",
+        "lightbox_locked" to "Screen Locked • Only Unlock button works",
+        "brightness_overdrive" to "2× BOOST",
+        "bing_pill" to "Bing"
     )
 
     private val extraBn = mapOf(
@@ -115,7 +125,17 @@ object L {
         "discover_feed_title" to "সব ক্যাটাগরির র্যান্ডম ছবি",
         "shuffle_btn" to "র্যান্ডম করুন",
         "browse_more_cat" to "Microsoft Bing-এ আরও ছবি দেখুন",
-        "explore_chars" to "চরিত্র"
+        "explore_chars" to "চরিত্র",
+        "choose_draw_system" to "ড্রয়িং সিস্টেম বেছে নিন",
+        "mode_camera" to "ক্যামেরা ড্রয়িং",
+        "mode_camera_sub" to "মোবাইলের ক্যামেরা দেখে কাগজে আঁকুন",
+        "mode_lightbox" to "ডিসপ্লে লাইটবক্স",
+        "mode_lightbox_sub" to "ডিসপ্লের উপরে কাগজ রেখে আঁকুন",
+        "screen_trace_short" to "ডিসপ্লে আঁকা",
+        "lightbox_hint" to "ছবি ঠিক করে কাগজ রাখার আগে লক বাটনে ক্লিক করুন",
+        "lightbox_locked" to "স্ক্রিন লক • লক বাটন ছাড়া কোথাও টাচ কাজ করবে না",
+        "brightness_overdrive" to "২× ডাবল আলো",
+        "bing_pill" to "Bing"
     )
 
     fun t(key: String): String {
