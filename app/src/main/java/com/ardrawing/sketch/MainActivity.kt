@@ -799,13 +799,10 @@ class MainActivity : ComponentActivity() {
                     if (cachedBmp != null) {
                         iv.setImageBitmap(cachedBmp)
                     } else {
-                        iv.setImageDrawable(StudioIcons.icon(this@MainActivity, StudioIcons.Type.ANIME_STAR, 32, Color.parseColor("#E5E7EB")))
-                        val miniSpin = ProgressBar(this@MainActivity).apply { isIndeterminate = true }
-                        addView(miniSpin, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.BOTTOM or Gravity.END).apply {
-                            setMargins(0, 0, dp(4), dp(4))
-                        })
+                        val spinner = ProgressBar(this@MainActivity).apply { isIndeterminate = true }
+                        addView(spinner, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
                         SketchSearchRepository.loadThumbBitmap(this@MainActivity, item) { bmp ->
-                            miniSpin.visibility = View.GONE
+                            spinner.visibility = View.GONE
                             if (bmp != null) {
                                 iv.alpha = 0f
                                 iv.setImageBitmap(bmp)
@@ -1019,21 +1016,21 @@ class MainActivity : ComponentActivity() {
         val q = query.trim().ifEmpty { "Anime black and white sketch drawing" }
         val isSketch = q.contains("black and white", ignoreCase = true) ||
             q.contains("sketch", ignoreCase = true) ||
-            q.contains("drawing", ignoreCase = true)
-        val tbs = if (isSketch) "&tbs=ic:gray" else ""
-        return "https://www.google.com/search?tbm=isch&q=${Uri.encode(q)}$tbs"
+            q.contains("drawing", ignoreCase = true) ||
+            q.contains("line art", ignoreCase = true)
+        val qft = if (isSketch) "&qft=${Uri.encode("+filterui:color2-bw+filterui:photo-linedrawing")}" else ""
+        return "https://www.bing.com/images/search?q=${Uri.encode(q)}$qft"
     }
 
     private fun openInChrome(query: String) {
-        val clean = query.trim().ifEmpty { "Anime black and white sketch drawing" }
-        val googleUrl = "https://www.google.com/search?tbm=isch&q=${Uri.encode(clean)}&tbs=ic:gray"
+        val bingUrl = buildBingImagesUrl(query)
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(googleUrl)).apply {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(bingUrl)).apply {
                 setPackage("com.android.chrome")
             })
         } catch (_: Throwable) {
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(googleUrl)))
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(bingUrl)))
             } catch (_: Throwable) {}
         }
     }
@@ -1209,16 +1206,12 @@ class MainActivity : ComponentActivity() {
             val bmp = decodeRemoteImage(fullUrl) ?: decodeRemoteImage(thumbUrl)
             if (bmp != null) {
                 val argb = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
-                val clean = if (
-                    browserQuery.contains("sketch", ignoreCase = true) ||
-                    browserQuery.contains("black and white", ignoreCase = true) ||
-                    browserQuery.contains("drawing", ignoreCase = true)
-                ) {
+                val clean = if (ImageProcessor.isLikelyBwDrawing(argb)) {
                     ImageProcessor.toCleanBwSketch(argb)
                 } else {
                     argb
                 }
-                saveToGallery(clean, "Google")
+                saveToGallery(clean, "Bing")
                 runOnUiThread { destroyWebView(); openEditorWithBitmap(clean) }
             } else {
                 runOnUiThread { Toast.makeText(this, L.t("import_fail"), Toast.LENGTH_SHORT).show() }

@@ -350,8 +350,9 @@ object ImageProcessor {
     }
 
     /**
-     * Checks whether a bitmap looks like a real sketch / line-art drawing on light paper
-     * rather than a full-color game screenshot, 3D render, or dark photo.
+     * Strictly verifies that a bitmap is a genuine black-and-white sketch / line-art drawing
+     * on white/light paper. Rejects colored pictures, colored screenshots, dark posters,
+     * and muddy grayscale photos so colored artwork is NEVER converted into fake B&W.
      */
     fun isLikelyBwDrawing(src: Bitmap): Boolean {
         val w = src.width
@@ -361,8 +362,10 @@ object ImageProcessor {
         val stepY = (h / 48).coerceAtLeast(1)
         var total = 0
         var vivid = 0
+        var tintColor = 0
         var lightPaper = 0
         var darkInk = 0
+        var midGray = 0
 
         var y = 0
         while (y < h) {
@@ -378,9 +381,11 @@ object ImageProcessor {
                     val b = Color.blue(c)
                     val lum = (r * 299 + g * 587 + b * 114) / 1000
                     val sat = max(r, max(g, b)) - min(r, min(g, b))
-                    if (sat > 42 && lum < 235) vivid++
-                    if (lum >= 190) lightPaper++
-                    if (lum < 85) darkInk++
+                    if (sat > 30 && lum < 238) vivid++
+                    if (sat > 18 && lum in 40..235) tintColor++
+                    if (lum >= 198 && sat <= 24) lightPaper++
+                    else if (lum < 95 && sat <= 36) darkInk++
+                    else if (lum in 95..185 && sat <= 28) midGray++
                 }
                 total++
                 x += stepX
@@ -389,22 +394,26 @@ object ImageProcessor {
         }
         if (total == 0) return false
         val vividRatio = vivid.toFloat() / total
+        val tintRatio = tintColor.toFloat() / total
         val lightRatio = lightPaper.toFloat() / total
         val darkRatio = darkInk.toFloat() / total
+        val midRatio = midGray.toFloat() / total
 
-        // Reject dark game screenshots / photos with no light paper background
-        if (lightRatio < 0.16f && darkRatio > 0.50f) return false
-        if (vividRatio > 0.35f && lightRatio < 0.35f) return false
-        if (vividRatio > 0.52f) return false
+        // Reject colored photos/renders strictly
+        if (vividRatio > 0.045f || tintRatio > 0.10f) return false
+        // Require real white/light sketch paper background
+        if (lightRatio < 0.42f) return false
+        // Reject blank white images and dark black screenshots/posters
+        if (darkRatio < 0.008f || darkRatio > 0.50f) return false
+        // Reject muddy grayscale photographs
+        if (midRatio > 0.45f) return false
         return true
     }
 
     /**
-     * Converts any sketch/line-art bitmap into pure black ink lines on a TRANSPARENT background:
-     * - Removes white/light paper backgrounds completely (Color.TRANSPARENT)
-     * - Strips colored fills (e.g. blue/purple/red clothing) using local 7x7 contrast so only
-     *   the black outlines and pen strokes remain
-     * - Outputs pure black (#000000) anti-aliased strokes with zero mixed color
+     * Cuts out the white/light paper background cleanly to Color.TRANSPARENT, keeps crisp pure
+     * black (#000000) sketch ink lines, and trims excess empty blank outer margins so the
+     * drawing sits cleanly centered without awkward border whitespace.
      */
     fun toCleanBwSketch(src: Bitmap): Bitmap {
         val w = src.width
@@ -437,7 +446,6 @@ object ImageProcessor {
             }
         }
 
-        // Fast 7x7 integral image for local luminance when colored regions exist
         val integral = if (hasColoredFills) {
             val stride = w + 1
             val satGrid = IntArray((h + 1) * stride)
@@ -457,6 +465,10 @@ object ImageProcessor {
         val out = IntArray(n)
         val radius = 3
         val stride = w + 1
+        var minX = w
+        var minY = h
+        var maxX = -1
+        var maxY = -1
 
         for (y in 0 until h) {
             val y1 = (y - radius).coerceAtLeast(0)
@@ -473,8 +485,7 @@ object ImageProcessor {
                 val lum = lums[idx]
                 val sat = sats[idx]
 
-                if (sat > 16) {
-                    // Colored pixel: keep ONLY dark outlines or local stroke edges, strip flat color fills
+                val outPixel = if (sat > 16) {
                     val keepAsLine = if (lum <= 42) {
                         true
                     } else if (integral != null && lum < 210) {
@@ -494,24 +505,53 @@ object ImageProcessor {
                     if (keepAsLine) {
                         val edgeAlpha = if (lum <= 70) 255 else ((215 - lum) * 255 / 145).coerceIn(80, 255)
                         val finalA = (edgeAlpha * origA / 255).coerceIn(0, 255)
-                        out[idx] = (finalA shl 24)
+                        (finalA shl 24)
                     } else {
-                        out[idx] = Color.TRANSPARENT
+                        Color.TRANSPARENT
                     }
                 } else {
-                    // Neutral B&W pixel: remove light paper background, keep crisp black lines
-                    if (lum >= 224) {
-                        out[idx] = Color.TRANSPARENT
+                    if (lum >= 220) {
+                        Color.TRANSPARENT
                     } else if (lum <= 135) {
-                        out[idx] = (origA shl 24)
+                        (origA shl 24)
                     } else {
-                        val lineA = ((224 - lum) * 255 / 89).coerceIn(0, 255)
+                        val lineA = ((220 - lum) * 255 / 85).coerceIn(0, 255)
                         val finalA = (lineA * origA / 255).coerceIn(0, 255)
-                        out[idx] = (finalA shl 24)
+                        (finalA shl 24)
                     }
+                }
+                out[idx] = outPixel
+                if ((outPixel ushr 24) >= 48) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
                 }
             }
         }
-        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+
+        val fullBmp = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+        if (maxX > minX && maxY > minY) {
+            val bw = maxX - minX + 1
+            val bh = maxY - minY + 1
+            // Trim excess outer blank margins while preserving balanced 5% breathing space
+            if (bw >= (w * 0.16f).toInt() && bh >= (h * 0.16f).toInt() &&
+                (bw < (w * 0.88f).toInt() || bh < (h * 0.88f).toInt())
+            ) {
+                val padX = (bw * 0.05f).toInt().coerceAtLeast(4)
+                val padY = (bh * 0.05f).toInt().coerceAtLeast(4)
+                val cx1 = (minX - padX).coerceAtLeast(0)
+                val cy1 = (minY - padY).coerceAtLeast(0)
+                val cx2 = (maxX + padX).coerceAtMost(w - 1)
+                val cy2 = (maxY + padY).coerceAtMost(h - 1)
+                val cw = (cx2 - cx1 + 1).coerceAtLeast(1)
+                val ch = (cy2 - cy1 + 1).coerceAtLeast(1)
+                if (cw < w || ch < h) {
+                    return Bitmap.createBitmap(fullBmp, cx1, cy1, cw, ch)
+                }
+            }
+        }
+        return fullBmp
     }
 }
+

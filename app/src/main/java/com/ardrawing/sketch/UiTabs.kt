@@ -728,20 +728,15 @@ object UiTabs {
                     if (cachedPreview != null) {
                         iv.setImageBitmap(cachedPreview)
                     } else {
-                        iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 42, Color.parseColor("#E5E7EB")))
-                        val miniSpin = ProgressBar(act).apply { isIndeterminate = true }
-                        addView(miniSpin, FrameLayout.LayoutParams(dp(14), dp(14), Gravity.BOTTOM or Gravity.END).apply {
-                            setMargins(0, 0, dp(3), dp(3))
-                        })
+                        val spinner = ProgressBar(act).apply { isIndeterminate = true }
+                        addView(spinner, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
 
                         SketchSearchRepository.loadTopicPreviewBitmap(act, item) { bmp ->
-                            miniSpin.visibility = View.GONE
+                            spinner.visibility = View.GONE
                             if (bmp != null) {
                                 iv.alpha = 0f
                                 iv.setImageBitmap(bmp)
                                 iv.animate().alpha(1f).setDuration(140).start()
-                            } else {
-                                iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 38, UiTheme.accentBright))
                             }
                         }
                     }

@@ -48,6 +48,9 @@ object SketchSearchRepository {
     @Volatile
     private var diskPreviewIndexLoaded = false
 
+    @Volatile
+    private var legacyCacheCleaned = false
+
     private val queryCache = LruCache<String, List<SketchResult>>(120)
     private val thumbBitmapCache = LruCache<String, Bitmap>(240)
     private val previewCache = LruCache<String, Bitmap>(220)
@@ -59,11 +62,6 @@ object SketchSearchRepository {
     private val turlRegex = Regex(""""turl"\s*:\s*"(https?://[^"]+)"""")
     private val titleRegex = Regex(""""t"\s*:\s*"([^"]*)"""")
     private val purlRegex = Regex(""""purl"\s*:\s*"(https?://[^"]+)"""")
-
-    private val gTbnUrlRegex = Regex("""https://encrypted-tbn\d*\.gstatic\.com/images\?q=tbn:[^"'\s\\<>]+""")
-    private val gImgPairRegex = Regex("""\["(https?://[^"\\]+)",\s*(\d{3,4}),\s*(\d{3,4})\]""")
-    private val gImgTagRegex = Regex("""<img[^>]+src="(https://encrypted-tbn\d*\.gstatic\.com/images\?q=tbn:[^"]+)"[^>]*>""")
-    private val altAttrRegex = Regex("""alt="([^"]*)"""")
 
     private val blockedHosts = listOf(
         "shutterstock", "alamy", "istockphoto", "dreamstime", "123rf",
@@ -78,7 +76,8 @@ object SketchSearchRepository {
         "call of duty", "cyberpunk 2077", "genshin impact",
         "cosplay", "action figure", "funko", "plush", "t-shirt", "hoodie",
         "lion king", "simba", "mufasa", "scarface", "kung fu panda", "giant panda",
-        "re:zero", "re zero", "iron man", "tony stark", "avengers", "playing card"
+        "re:zero", "re zero", "iron man", "tony stark", "avengers", "playing card",
+        "wallpaper", "screenshot", "figurine", "sticker", "tattoo", "amv", "episode"
     )
 
     private val ambiguousCharWords = setOf(
@@ -90,6 +89,13 @@ object SketchSearchRepository {
         "tusk", "symbol", "statue", "ant", "beast", "dragon", "rose", "lotus",
         "lion", "overhaul", "smiley", "watkins", "gordon", "henry", "martha",
         "hinata", "android"
+    )
+
+    private val genericTopicStopWords = setOf(
+        "the", "and", "of", "for", "with", "devil", "face", "smug", "symbol", "statue", "man",
+        "fruit", "fruits", "car", "cars", "supercar", "sports", "food", "foods", "dessert",
+        "flower", "flowers", "landscape", "scenery", "animal", "animals", "bird", "insect",
+        "cute", "running", "anime", "classic", "vintage", "tree", "slice", "bowl", "cup", "cone"
     )
 
     private val seriesAliases = mapOf(
@@ -140,18 +146,34 @@ object SketchSearchRepository {
         return digest.joinToString("") { "%02x".format(it) }.take(24)
     }
 
+    private fun ensureCleanCache(ctx: Context) {
+        if (legacyCacheCleaned) return
+        legacyCacheCleaned = true
+        diskWriteExecutor.execute {
+            try {
+                listOf("bw_previews", "bw_thumbs", "bw_queries").forEach { oldName ->
+                    val oldDir = File(ctx.filesDir, oldName)
+                    if (oldDir.exists()) oldDir.deleteRecursively()
+                }
+            } catch (_: Throwable) {}
+        }
+    }
+
     private fun previewFile(ctx: Context, id: String): File {
-        val dir = File(ctx.filesDir, "bw_previews").apply { if (!exists()) mkdirs() }
+        ensureCleanCache(ctx)
+        val dir = File(ctx.filesDir, "bw_previews_v2").apply { if (!exists()) mkdirs() }
         return File(dir, "${safeFileName(id)}.png")
     }
 
     private fun thumbFile(ctx: Context, urlKey: String): File {
-        val dir = File(ctx.filesDir, "bw_thumbs").apply { if (!exists()) mkdirs() }
+        ensureCleanCache(ctx)
+        val dir = File(ctx.filesDir, "bw_thumbs_v2").apply { if (!exists()) mkdirs() }
         return File(dir, "${hashUrlKey(urlKey)}.png")
     }
 
     private fun queryFile(ctx: Context, cacheKey: String): File {
-        val dir = File(ctx.filesDir, "bw_queries").apply { if (!exists()) mkdirs() }
+        ensureCleanCache(ctx)
+        val dir = File(ctx.filesDir, "bw_queries_v2").apply { if (!exists()) mkdirs() }
         return File(dir, "${safeFileName(cacheKey)}.txt")
     }
 
@@ -217,9 +239,6 @@ object SketchSearchRepository {
         }
     }
 
-    /**
-     * Synchronous lookup for cached 5-sketch query results (local -> RAM -> disk).
-     */
     fun getCachedFiveSync(ctx: Context, character: String, series: String): List<SketchResult>? {
         appCtx = ctx.applicationContext
         val cleanChar = AnimeCatalog.normalizeQuery(character).trim()
@@ -255,10 +274,6 @@ object SketchSearchRepository {
         return null
     }
 
-    /**
-     * Synchronous lookup for topic preview bitmap (local asset -> RAM LRU -> disk PNG).
-     * Allows Home cards to render photos directly on frame 0 with zero loading spinner.
-     */
     fun getCachedPreviewSync(ctx: Context, item: CategoryCatalog.TopicItem): Bitmap? {
         appCtx = ctx.applicationContext
         if (item.localSample != null) {
@@ -277,9 +292,6 @@ object SketchSearchRepository {
         return null
     }
 
-    /**
-     * Synchronous lookup for individual sketch thumbnail (local -> RAM LRU -> disk PNG).
-     */
     fun getCachedThumbSync(ctx: Context, item: SketchResult): Bitmap? {
         appCtx = ctx.applicationContext
         if (item.localSample != null) {
@@ -300,22 +312,16 @@ object SketchSearchRepository {
         return null
     }
 
-    /**
-     * Called right when the app opens (during Splash) so:
-     * 1) All previously cached PNG previews on disk are pre-decoded into RAM LRU immediately.
-     * 2) Bundled Naruto cover thumbnails are decoded into RAM LRU.
-     * 3) Top Home spotlight, all Anime series covers, and random grid cards are fetched concurrently
-     *    using lightweight ~18KB HTML + ~280px thumbnails before the user enters Home.
-     */
     fun warmupHomePreviews(ctx: Context, homeSeed: Long) {
         val c = ctx.applicationContext
         appCtx = c
+        ensureCleanCache(c)
 
         previewExecutor.execute {
             if (!diskPreviewIndexLoaded) {
                 diskPreviewIndexLoaded = true
                 try {
-                    val dir = File(c.filesDir, "bw_previews")
+                    val dir = File(c.filesDir, "bw_previews_v2")
                     if (dir.exists()) {
                         dir.listFiles()
                             ?.asSequence()
@@ -334,7 +340,6 @@ object SketchSearchRepository {
                 } catch (_: Throwable) {}
             }
 
-            // Warm flagship Naruto local cover & popular local chars
             val covers = CategoryCatalog.animeSeriesCovers()
             covers.filter { it.localSample != null }.forEach {
                 it.localSample?.let { s -> Samples.loadThumb(c, s, 320) }
@@ -347,7 +352,6 @@ object SketchSearchRepository {
 
         val seen = HashSet<String>()
         val priorityQueue = ArrayList<CategoryCatalog.TopicItem>(60)
-        // Highest visual priority: Anime Series covers + top spotlight first
         (covers + spotlight + grid + CategoryCatalog.fruits.take(6) + CategoryCatalog.cars.take(6)).forEach { item ->
             if (seen.add(item.id)) priorityQueue.add(item)
         }
@@ -398,6 +402,10 @@ object SketchSearchRepository {
         }
     }
 
+    /**
+     * Fetches strictly 5 clean black-and-white line-art sketches exclusively via Microsoft Bing Images
+     * (never Google, never converting colorful pictures into fake B&W).
+     */
     fun getFiveSketches(
         character: String,
         series: String,
@@ -411,7 +419,6 @@ object SketchSearchRepository {
             return
         }
 
-        // Check curated local sketches first for bundled Naruto characters
         val localFive = getLocalFiveIfExactHero(cleanChar, cleanSeries)
         if (localFive.isNotEmpty()) {
             mainHandler.post { onComplete(localFive) }
@@ -448,69 +455,63 @@ object SketchSearchRepository {
                 }
             }
 
-            // Tier 1: Fast Google Basic (~18KB HTML) + compact Bing line-art in parallel.
-            // Process Google Basic immediately as soon as it returns without waiting for bloated Desktop HTML.
-            val fG1 = searchExecutor.submit<List<Candidate>> {
-                fetchGoogleBasicBwCandidates("$subject anime black and white line art drawing", cleanChar, cleanSeries, fast = true)
-            }
+            // Tier 1: Microsoft Bing Line-Drawing filter (color2-bw + photo-linedrawing)
             val fB1 = searchExecutor.submit<List<Candidate>> {
-                fetchBingBwCandidates("$subject anime line art drawing", cleanChar, cleanSeries, lineArtFilter = true, maxCount = 20, thumbW = 420, fast = true)
+                fetchBingBwCandidates(
+                    "$subject anime coloring page black and white line art",
+                    cleanChar,
+                    cleanSeries,
+                    lineArtFilter = true,
+                    maxCount = 28,
+                    thumbW = 420,
+                    fast = true
+                )
+            }
+            val fB2 = searchExecutor.submit<List<Candidate>> {
+                fetchBingBwCandidates(
+                    "$subject anime sketch drawing outline",
+                    cleanChar,
+                    cleanSeries,
+                    lineArtFilter = true,
+                    maxCount = 24,
+                    thumbW = 420,
+                    fast = true
+                )
             }
 
-            val g1List = try { fG1.get() } catch (_: Throwable) { emptyList() }
-            absorbPool(g1List)
-
+            absorbPool(try { fB1.get() } catch (_: Throwable) { emptyList() })
             if (verified.size < 5) {
-                val b1List = try { fB1.get() } catch (_: Throwable) { emptyList() }
-                absorbPool(b1List)
+                absorbPool(try { fB2.get() } catch (_: Throwable) { emptyList() })
             } else {
-                fB1.cancel(false)
+                fB2.cancel(false)
             }
 
-            // Tier 2: Fast coloring page / sketch outline if still under 5
+            // Tier 2: Microsoft Bing B&W filter for additional verified white-paper drawings
             if (verified.size < 5) {
-                val fG2 = searchExecutor.submit<List<Candidate>> {
-                    fetchGoogleBasicBwCandidates("$subject anime coloring page black and white", cleanChar, cleanSeries, fast = true)
-                }
-                val fB2 = searchExecutor.submit<List<Candidate>> {
-                    fetchBingBwCandidates("$subject anime black and white sketch drawing", cleanChar, cleanSeries, lineArtFilter = false, maxCount = 20, thumbW = 420, fast = true)
-                }
-                val g2List = try { fG2.get() } catch (_: Throwable) { emptyList() }
-                absorbPool(g2List)
-                if (verified.size < 5) {
-                    val b2List = try { fB2.get() } catch (_: Throwable) { emptyList() }
-                    absorbPool(b2List)
-                } else {
-                    fB2.cancel(false)
-                }
+                val b3 = fetchBingBwCandidates(
+                    "$subject black and white drawing sketch",
+                    cleanChar,
+                    cleanSeries,
+                    lineArtFilter = false,
+                    maxCount = 24,
+                    thumbW = 420,
+                    fast = true
+                )
+                absorbPool(b3)
             }
 
-            // Tier 3: Broader anime drawing / manga panel fallback if still under 5
+            // Tier 3: Microsoft Bing manga/pencil line fallback for rare characters
             if (verified.size < 5) {
-                val fG3 = searchExecutor.submit<List<Candidate>> {
-                    fetchGoogleBasicBwCandidates("$subject anime sketch drawing", cleanChar, cleanSeries, fast = true)
-                }
-                val fB3 = searchExecutor.submit<List<Candidate>> {
-                    fetchBingBwCandidates("$subject coloring page outline", cleanChar, cleanSeries, lineArtFilter = false, maxCount = 16, thumbW = 420, fast = true)
-                }
-                val tier3 = ArrayList<Candidate>()
-                try { tier3.addAll(fG3.get()) } catch (_: Throwable) {}
-                try { tier3.addAll(fB3.get()) } catch (_: Throwable) {}
-                absorbPool(tier3)
-            }
-
-            // Tier 4: Heavy full-HTML & pencil drawing fallback only for rare characters
-            if (verified.size < 5) {
-                val fG4 = searchExecutor.submit<List<Candidate>> {
-                    fetchGoogleBasicBwCandidates("$subject pencil drawing", cleanChar, cleanSeries, fast = false)
-                }
-                val fGFull = searchExecutor.submit<List<Candidate>> {
-                    fetchGoogleFullBwCandidates("$subject anime sketch", cleanChar, cleanSeries, fast = false)
-                }
-                val tier4 = ArrayList<Candidate>()
-                try { tier4.addAll(fG4.get()) } catch (_: Throwable) {}
-                try { tier4.addAll(fGFull.get()) } catch (_: Throwable) {}
-                absorbPool(tier4)
+                val b4 = fetchBingBwCandidates(
+                    "$subject manga pencil line art",
+                    cleanChar,
+                    cleanSeries,
+                    lineArtFilter = false,
+                    maxCount = 24,
+                    thumbW = 420,
+                    fast = false
+                )
+                absorbPool(b4)
             }
 
             val moodLabels = listOf(
@@ -556,19 +557,15 @@ object SketchSearchRepository {
         return deduped
     }
 
-    /**
-     * Validates candidates using ExecutorCompletionService so results complete
-     * in fastest-arrival order without blocking on slow or dead image hosts.
-     */
     private fun validateAndPreload(candidates: List<Candidate>, targetCount: Int): ArrayList<Candidate> {
         val verified = ArrayList<Candidate>(targetCount)
         if (candidates.isEmpty() || targetCount <= 0) return verified
 
-        val pool = candidates.take(24)
+        val pool = candidates.take(28)
         var idx = 0
         while (idx < pool.size && verified.size < targetCount) {
             val needed = targetCount - verified.size
-            val batchSize = (needed + 4).coerceAtMost(9)
+            val batchSize = (needed + 5).coerceAtMost(10)
             val batch = pool.subList(idx, minOf(idx + batchSize, pool.size))
             val ecs = ExecutorCompletionService<Pair<Candidate, Bitmap?>?>(imgExecutor)
 
@@ -579,7 +576,7 @@ object SketchSearchRepository {
                         ?: return@submit null
                     if (rawBmp.width < 85 || rawBmp.height < 85) return@submit null
                     val ratio = maxOf(rawBmp.width, rawBmp.height).toFloat() / minOf(rawBmp.width, rawBmp.height).toFloat()
-                    if (ratio > 3.5f) return@submit null
+                    if (ratio > 3.2f) return@submit null
                     if (!ImageProcessor.isLikelyBwDrawing(rawBmp)) return@submit null
                     cand to ImageProcessor.toCleanBwSketch(rawBmp)
                 }
@@ -605,95 +602,13 @@ object SketchSearchRepository {
         return verified
     }
 
-    /**
-     * Queries Google Images Basic HTML (gbv=1) which returns tiny static ~18KB HTML with fast
-     * gstatic thumbnails without requiring JavaScript execution.
-     */
-    private fun fetchGoogleBasicBwCandidates(
-        query: String,
-        character: String,
-        series: String,
-        fast: Boolean = true
-    ): List<Candidate> {
-        return try {
-            val url = "https://www.google.com/search?tbm=isch&gbv=1&q=${Uri.encode(query)}&tbs=ic:gray"
-            val html = fetchHtml(url, mobileUa = false, fast = fast) ?: return emptyList()
-            val out = ArrayList<Candidate>()
-
-            for (m in gImgTagRegex.findAll(html)) {
-                val imgTag = m.value
-                val tbn = Html.fromHtml(m.groupValues[1], Html.FROM_HTML_MODE_LEGACY).toString()
-                val alt = altAttrRegex.find(imgTag)?.groupValues?.get(1) ?: ""
-                val winStart = (m.range.first - 120).coerceAtLeast(0)
-                val winEnd = (m.range.last + 320).coerceAtMost(html.length)
-                val contextText = Html.fromHtml(
-                    "$alt " + html.substring(winStart, winEnd).replace(Regex("<[^>]+>"), " "),
-                    Html.FROM_HTML_MODE_LEGACY
-                ).toString()
-
-                val score = scoreCandidate(tbn, contextText, "", character, series)
-                if (score >= 0) {
-                    out.add(Candidate(tbn, tbn, contextText, "", score + 14))
-                }
-                if (out.size >= 16) break
-            }
-            out
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
-    private fun fetchGoogleFullBwCandidates(
-        query: String,
-        character: String,
-        series: String,
-        fast: Boolean = false
-    ): List<Candidate> {
-        return try {
-            val url = "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}&tbs=ic:gray,itp:lineart"
-            val html = fetchHtml(url, mobileUa = false, fast = fast) ?: return emptyList()
-            val out = ArrayList<Candidate>()
-
-            val fullUrls = ArrayList<Pair<String, Int>>()
-            for (m in gImgPairRegex.findAll(html)) {
-                val imgUrl = unescapeJsonUrl(m.groupValues[1])
-                val w = m.groupValues[2].toIntOrNull() ?: 0
-                val h = m.groupValues[3].toIntOrNull() ?: 0
-                if (w < 180 || h < 180) continue
-                val low = imgUrl.lowercase()
-                if (low.contains("gstatic.com") || low.contains("google.com")) continue
-                if (blockedHosts.any { low.contains(it) }) continue
-                if (low.endsWith(".svg") || low.endsWith(".gif")) continue
-                fullUrls.add(imgUrl to m.range.first)
-            }
-
-            val tbnMatches = gTbnUrlRegex.findAll(html).toList()
-            for ((uUrl, pos) in fullUrls) {
-                val nearTbn = tbnMatches.minByOrNull { kotlin.math.abs(it.range.first - pos) }
-                    ?.takeIf { kotlin.math.abs(it.range.first - pos) < 600 }
-                    ?.value ?: uUrl
-                val windowStart = (pos - 350).coerceAtLeast(0)
-                val windowEnd = (pos + 550).coerceAtMost(html.length)
-                val snippet = html.substring(windowStart, windowEnd)
-                val score = scoreCandidate(uUrl, snippet, "", character, series)
-                if (score >= 0) {
-                    out.add(Candidate(uUrl, nearTbn, snippet, "", score + 12))
-                }
-                if (out.size >= 12) break
-            }
-            out
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
     private fun fetchBingBwCandidates(
         query: String,
         character: String,
         series: String,
         lineArtFilter: Boolean,
-        maxCount: Int = 20,
-        thumbW: Int = 420,
+        maxCount: Int = 24,
+        thumbW: Int = 360,
         fast: Boolean = true
     ): List<Candidate> {
         return try {
@@ -729,8 +644,9 @@ object SketchSearchRepository {
     }
 
     /**
-     * Strict same-character relevance scoring:
-     * Returns -1 to reject GTA V, unrelated games, other anime franchises, or wrong characters.
+     * Strictly scores Bing candidate relevance:
+     * - Rejects wrong characters, cross-franchise anime results, wallpapers, screenshots, colored artwork
+     * - Requires core subject tokens (and series validation for anime/ambiguous names) to match.
      */
     private fun scoreCandidate(
         imgUrl: String,
@@ -748,27 +664,29 @@ object SketchSearchRepository {
             }
         }
 
-        // Reject explicitly colored results (allow "coloring"/"colouring" outline sheets)
+        // Reject explicitly colored or painterly artwork (allow "coloring"/"colouring" outline pages)
         val noColoring = combined.replace("coloring", "").replace("colouring", "")
-        if (Regex("""\b(full\s*color|colored|coloured|watercolor)\b""").containsMatchIn(noColoring)) {
+        if (Regex("""\b(full\s*color|colored|coloured|watercolor|oil\s*painting|acrylic)\b""").containsMatchIn(noColoring)) {
             return -1
         }
 
-        // Cross-franchise negative guard: reject results clearly belonging to a DIFFERENT anime series
         val seriesKey = series.lowercase().trim()
         val isKnownAnimeSeries = seriesKey.isNotEmpty() && seriesAliases.containsKey(seriesKey)
-        if (isKnownAnimeSeries) {
-            val ownAliases = seriesAliases[seriesKey] ?: listOf(seriesKey)
-            val mentionsOwnSeries = ownAliases.any { combined.contains(it) }
-            if (!mentionsOwnSeries) {
-                for ((otherSeries, otherAliases) in seriesAliases) {
-                    if (otherSeries == seriesKey) continue
-                    if (otherAliases.any { alias ->
-                            alias.length >= 4 && Regex("""\b${Regex.escape(alias)}\b""").containsMatchIn(combined)
-                        }
-                    ) {
-                        return -1
+        val ownSeriesAliases = if (isKnownAnimeSeries) {
+            seriesAliases[seriesKey] ?: extractNameTokens(series)
+        } else {
+            emptyList()
+        }
+        val hasSeriesMatch = ownSeriesAliases.any { combined.contains(it) }
+
+        if (isKnownAnimeSeries && !hasSeriesMatch) {
+            for ((otherSeries, otherAliases) in seriesAliases) {
+                if (otherSeries == seriesKey) continue
+                if (otherAliases.any { alias ->
+                        alias.length >= 4 && Regex("""\b${Regex.escape(alias)}\b""").containsMatchIn(combined)
                     }
+                ) {
+                    return -1
                 }
             }
         }
@@ -780,23 +698,29 @@ object SketchSearchRepository {
         }
 
         val hasMetadata = title.isNotBlank() || pageUrl.isNotBlank()
-        if (hasMetadata && charTokens.isNotEmpty() && matchedCharTokens.isEmpty()) {
-            return -1
+        if (charTokens.isNotEmpty()) {
+            if (isKnownAnimeSeries) {
+                if (hasMetadata && matchedCharTokens.isEmpty()) return -1
+                if (!hasMetadata && matchedCharTokens.isEmpty() && !hasSeriesMatch) return -1
+            } else {
+                // For single-word topics (e.g. "Mango", "Lamborghini", "Cat"), that word MUST match.
+                // For multi-word non-anime topics (e.g. "Ford Mustang", "Mountain River Boat"),
+                // require at least one core token (or last distinctive token like "mustang"/"wagon").
+                if (charTokens.size == 1) {
+                    if (hasMetadata && matchedCharTokens.isEmpty()) return -1
+                    if (!hasMetadata && matchedCharTokens.isEmpty()) return -1
+                } else {
+                    if (hasMetadata && matchedCharTokens.isEmpty()) return -1
+                    if (!hasMetadata && matchedCharTokens.isEmpty()) return -1
+                }
+            }
         }
-
-        val ownSeriesAliases = if (isKnownAnimeSeries) {
-            seriesAliases[seriesKey] ?: extractNameTokens(series)
-        } else {
-            emptyList()
-        }
-        val hasSeriesMatch = ownSeriesAliases.any { combined.contains(it) }
 
         val allMatchedAmbiguous = matchedCharTokens.isNotEmpty() && matchedCharTokens.all { it in ambiguousCharWords }
         if (isKnownAnimeSeries && allMatchedAmbiguous && !hasSeriesMatch) {
             return -1
         }
 
-        // Specific Hinata guard: Haikyuu's Shoyo Hinata must not pull Naruto's Hinata Hyuga
         if (seriesKey == "haikyuu" && (combined.contains("hyuga") || combined.contains("byakugan"))) {
             return -1
         }
@@ -805,27 +729,26 @@ object SketchSearchRepository {
         }
 
         var score = 0
-        score += matchedCharTokens.size * 18
-        if (hasSeriesMatch) score += 24
-        if (combined.contains("line art") || combined.contains("lineart") || combined.contains("coloring")) score += 14
-        if (combined.contains("sketch") || combined.contains("outline")) score += 10
+        score += matchedCharTokens.size * 20
+        if (hasSeriesMatch) score += 26
+        if (combined.contains("coloring page") || combined.contains("coloring sheet") || combined.contains("line art") || combined.contains("lineart")) score += 18
+        if (combined.contains("sketch") || combined.contains("outline") || combined.contains("how to draw")) score += 12
         if (combined.contains("black and white") || combined.contains("b&w") || combined.contains("drawing")) score += 8
         return score
     }
 
     private fun extractNameTokens(raw: String): List<String> {
-        val stop = setOf("the", "and", "of", "for", "with", "devil", "face", "smug", "symbol", "statue", "man")
         val cleaned = raw.lowercase().replace(Regex("""[^a-z0-9\s]"""), " ")
         val words = cleaned.split(Regex("""\s+""")).filter { it.isNotBlank() }
-        val strong = words.filter { it.length >= 3 && it !in stop }
+        val strong = words.filter { it.length >= 3 && it !in genericTopicStopWords }
         return if (strong.isNotEmpty()) strong else words.filter { it.length >= 2 }
     }
 
     private fun fetchHtml(urlStr: String, mobileUa: Boolean, fast: Boolean = true): String? {
         return try {
             val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                connectTimeout = if (fast) 2400 else 4500
-                readTimeout = if (fast) 3200 else 5500
+                connectTimeout = if (fast) 2600 else 4800
+                readTimeout = if (fast) 3400 else 5800
                 instanceFollowRedirects = true
                 setRequestProperty("Connection", "keep-alive")
                 setRequestProperty(
@@ -837,20 +760,12 @@ object SketchSearchRepository {
                     }
                 )
                 setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                setRequestProperty("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+667")
             }
             if (conn.responseCode !in 200..299) return null
             conn.inputStream.bufferedReader().use { it.readText() }
         } catch (_: Throwable) {
             null
         }
-    }
-
-    private fun unescapeJsonUrl(raw: String): String {
-        return raw
-            .replace("\\u003d", "=")
-            .replace("\\u0026", "&")
-            .replace("\\/", "/")
     }
 
     private fun extractOipKey(url: String): String {
@@ -872,7 +787,8 @@ object SketchSearchRepository {
         imgExecutor.execute {
             val raw = fetchBitmapFromUrl(item.thumbUrl, maxDim = 420, fast = true)
                 ?: fetchBitmapFromUrl(item.fullUrl, maxDim = 420, fast = true)
-            val bmp = raw?.let { ImageProcessor.toCleanBwSketch(it) }
+            val valid = raw?.takeIf { ImageProcessor.isLikelyBwDrawing(it) }
+            val bmp = valid?.let { ImageProcessor.toCleanBwSketch(it) }
             if (bmp != null) {
                 thumbBitmapCache.put(key, bmp)
                 saveThumbToDiskAsync(key, bmp)
@@ -892,6 +808,7 @@ object SketchSearchRepository {
                 .replace("&w=540", "&w=960")
                 .replace("&w=480", "&w=960")
                 .replace("&w=420", "&w=960")
+                .replace("&w=320", "&w=960")
                 .replace("&w=280", "&w=960")
             val raw = fetchBitmapFromUrl(item.fullUrl, maxDim = 1440, fast = false)
                 ?: fetchBitmapFromUrl(hdThumb, maxDim = 1280, fast = true)
@@ -938,48 +855,46 @@ object SketchSearchRepository {
                     val subjectChar = item.characterName.ifEmpty { item.title }
                     val subjectSeries = item.seriesName
                     val q = item.searchQuery.trim()
-                    val candidates = ArrayList<Candidate>()
-                    candidates.addAll(
-                        fetchGoogleBasicBwCandidates(
-                            "$q black and white line art drawing",
+
+                    var candidates = fetchBingBwCandidates(
+                        "$q black and white coloring page line art",
+                        subjectChar,
+                        subjectSeries,
+                        lineArtFilter = true,
+                        maxCount = 20,
+                        thumbW = 320,
+                        fast = true
+                    )
+                    if (candidates.size < 4) {
+                        candidates = candidates + fetchBingBwCandidates(
+                            "$q sketch drawing black and white",
                             subjectChar,
                             subjectSeries,
+                            lineArtFilter = true,
+                            maxCount = 16,
+                            thumbW = 320,
                             fast = true
                         )
-                    )
-                    if (candidates.isEmpty()) {
-                        candidates.addAll(
-                            fetchBingBwCandidates(
-                                "$q line art sketch",
-                                subjectChar,
-                                subjectSeries,
-                                lineArtFilter = true,
-                                maxCount = 12,
-                                thumbW = 280,
-                                fast = true
-                            )
-                        )
                     }
                     if (candidates.isEmpty()) {
-                        candidates.addAll(
-                            fetchBingBwCandidates(
-                                "$q coloring page outline",
-                                subjectChar,
-                                subjectSeries,
-                                lineArtFilter = false,
-                                maxCount = 12,
-                                thumbW = 280,
-                                fast = true
-                            )
+                        candidates = fetchBingBwCandidates(
+                            "$q drawing outline",
+                            subjectChar,
+                            subjectSeries,
+                            lineArtFilter = false,
+                            maxCount = 16,
+                            thumbW = 320,
+                            fast = true
                         )
                     }
-                    val ranked = mergeAndRankCandidates(candidates).take(5)
+
+                    val ranked = mergeAndRankCandidates(candidates).take(10)
                     for (cand in ranked) {
                         val previewUrl = cand.thumbUrl.ifEmpty { cand.fullUrl }
-                        val raw = fetchBitmapFromUrl(previewUrl, maxDim = 280, fast = true) ?: continue
+                        val raw = fetchBitmapFromUrl(previewUrl, maxDim = 320, fast = true) ?: continue
                         if (raw.width < 75 || raw.height < 75) continue
                         val ratio = maxOf(raw.width, raw.height).toFloat() / minOf(raw.width, raw.height).toFloat()
-                        if (ratio > 3.2f) continue
+                        if (ratio > 3.0f) continue
                         if (!ImageProcessor.isLikelyBwDrawing(raw)) continue
                         val clean = ImageProcessor.toCleanBwSketch(raw)
                         previewUrlCache[key] = cand.fullUrl to cand.thumbUrl
@@ -1017,7 +932,8 @@ object SketchSearchRepository {
             var fullBmp: Bitmap? = null
             if (urls != null) {
                 val (fullUrl, thumbUrl) = urls
-                val hdThumb = thumbUrl.replace("&w=540", "&w=960").replace("&w=480", "&w=960").replace("&w=280", "&w=960")
+                val hdThumb = thumbUrl.replace("&w=540", "&w=960").replace("&w=480", "&w=960")
+                    .replace("&w=320", "&w=960").replace("&w=280", "&w=960")
                 val raw = fetchBitmapFromUrl(fullUrl, maxDim = 1440, fast = false)
                     ?: fetchBitmapFromUrl(hdThumb, maxDim = 1280, fast = true)
                     ?: fetchBitmapFromUrl(thumbUrl, maxDim = 960, fast = true)
@@ -1030,11 +946,16 @@ object SketchSearchRepository {
                 val subjectChar = item.characterName.ifEmpty { item.title }
                 val subjectSeries = item.seriesName
                 val q = item.searchQuery.trim()
-                val gCands = fetchGoogleBasicBwCandidates("$q black and white line art drawing", subjectChar, subjectSeries, fast = true)
-                val pool = if (gCands.isNotEmpty()) gCands else {
-                    fetchBingBwCandidates("$q line art sketch", subjectChar, subjectSeries, lineArtFilter = true, maxCount = 12, thumbW = 640, fast = false)
-                }
-                for (cand in mergeAndRankCandidates(pool).take(5)) {
+                val pool = fetchBingBwCandidates(
+                    "$q black and white coloring page line art",
+                    subjectChar,
+                    subjectSeries,
+                    lineArtFilter = true,
+                    maxCount = 16,
+                    thumbW = 640,
+                    fast = false
+                )
+                for (cand in mergeAndRankCandidates(pool).take(8)) {
                     val raw = fetchBitmapFromUrl(cand.fullUrl, maxDim = 1280, fast = false)
                         ?: fetchBitmapFromUrl(cand.thumbUrl, maxDim = 960, fast = true)
                         ?: continue
@@ -1055,8 +976,8 @@ object SketchSearchRepository {
         if (!urlStr.startsWith("http")) return null
         return try {
             val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                connectTimeout = if (fast) 2400 else 5000
-                readTimeout = if (fast) 3200 else 6500
+                connectTimeout = if (fast) 2500 else 5000
+                readTimeout = if (fast) 3300 else 6500
                 instanceFollowRedirects = true
                 setRequestProperty("Connection", "keep-alive")
                 setRequestProperty(
@@ -1082,4 +1003,3 @@ object SketchSearchRepository {
         }
     }
 }
-

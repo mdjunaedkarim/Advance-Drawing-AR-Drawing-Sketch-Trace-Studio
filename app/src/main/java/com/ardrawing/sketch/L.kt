@@ -93,7 +93,7 @@ object L {
         "all_anime_title" to "All 20 Anime Series",
         "discover_feed_title" to "Random Sketches Feed",
         "shuffle_btn" to "Shuffle",
-        "browse_more_cat" to "More on Google Images",
+        "browse_more_cat" to "More on Microsoft Bing",
         "explore_chars" to "Characters"
     )
 
@@ -114,7 +114,7 @@ object L {
         "all_anime_title" to "সব ২০টি অ্যানিমে সিরিজ",
         "discover_feed_title" to "সব ক্যাটাগরির র্যান্ডম ছবি",
         "shuffle_btn" to "র্যান্ডম করুন",
-        "browse_more_cat" to "Google-এ আরও ছবি দেখুন",
+        "browse_more_cat" to "Microsoft Bing-এ আরও ছবি দেখুন",
         "explore_chars" to "চরিত্র"
     )
 
