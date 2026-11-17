@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
+        SketchSearchRepository.warmupHomePreviews(applicationContext, UiTabs.homeShuffleSeed)
         showSplash()
     }
 
@@ -278,17 +279,17 @@ class MainActivity : ComponentActivity() {
         var p = 1
         handler.postDelayed(object : Runnable {
             override fun run() {
-                p = (p + 3).coerceAtMost(100)
+                p = (p + 4).coerceAtMost(100)
                 bar.progress = p
                 pctTv.text = "${L.t("loading")}... $p%"
-                if (p < 100) handler.postDelayed(this, 52)
+                if (p < 100) handler.postDelayed(this, 45)
                 else handler.postDelayed({
                     billingAds.showStartupAd(this@MainActivity) {
                         runOnUiThread { showFlow(Flow.MAIN) }
                     }
-                }, 200)
+                }, 140)
             }
-        }, 60)
+        }, 45)
     }
 
     private fun showFlow(target: Flow) {
@@ -794,12 +795,23 @@ class MainActivity : ComponentActivity() {
                     }
                     addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
-                    val spinner = ProgressBar(this@MainActivity).apply { isIndeterminate = true }
-                    addView(spinner, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
-
-                    SketchSearchRepository.loadThumbBitmap(this@MainActivity, item) { bmp ->
-                        spinner.visibility = View.GONE
-                        if (bmp != null) iv.setImageBitmap(bmp)
+                    val cachedBmp = SketchSearchRepository.getCachedThumbSync(this@MainActivity, item)
+                    if (cachedBmp != null) {
+                        iv.setImageBitmap(cachedBmp)
+                    } else {
+                        iv.setImageDrawable(StudioIcons.icon(this@MainActivity, StudioIcons.Type.ANIME_STAR, 32, Color.parseColor("#E5E7EB")))
+                        val miniSpin = ProgressBar(this@MainActivity).apply { isIndeterminate = true }
+                        addView(miniSpin, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.BOTTOM or Gravity.END).apply {
+                            setMargins(0, 0, dp(4), dp(4))
+                        })
+                        SketchSearchRepository.loadThumbBitmap(this@MainActivity, item) { bmp ->
+                            miniSpin.visibility = View.GONE
+                            if (bmp != null) {
+                                iv.alpha = 0f
+                                iv.setImageBitmap(bmp)
+                                iv.animate().alpha(1f).setDuration(140).start()
+                            }
+                        }
                     }
 
                     addView(TextView(this@MainActivity).apply {
@@ -872,31 +884,8 @@ class MainActivity : ComponentActivity() {
         }
 
         fun loadGallery(forceRefresh: Boolean) {
-            bodyCol.removeAllViews()
-            val loadingCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
-                setPadding(dp(20), dp(34), dp(20), dp(34))
-                addView(ProgressBar(this@MainActivity).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { bottomMargin = dp(12) })
-                addView(TextView(this@MainActivity).apply {
-                    text = L.t("searching_sketches")
-                    textSize = 13.5f
-                    UiTheme.applyUiFont(this, bold = true)
-                    setTextColor(UiTheme.textSub)
-                    gravity = Gravity.CENTER
-                })
-            }
-            bodyCol.addView(loadingCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
-            bodyCol.addView(buildMorePhotosBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
-
-            val targetChar = selectedCharacterName
-            val targetSeries = selectedCharacterSeries
-            SketchSearchRepository.getFiveSketches(targetChar, targetSeries, forceRefresh) { results ->
-                if (flow != Flow.CHAR_GALLERY || isFinishing || isDestroyed) return@getFiveSketches
-                if (selectedCharacterName != targetChar || selectedCharacterSeries != targetSeries) return@getFiveSketches
+            fun renderResults(results: List<SketchSearchRepository.SketchResult>) {
                 bodyCol.removeAllViews()
-
                 val topFive = results.take(5)
                 if (topFive.isEmpty()) {
                     val emptyCard = LinearLayout(this).apply {
@@ -952,6 +941,39 @@ class MainActivity : ComponentActivity() {
                     topMargin = dp(2)
                     bottomMargin = dp(18)
                 })
+            }
+
+            val targetChar = selectedCharacterName
+            val targetSeries = selectedCharacterSeries
+            if (!forceRefresh) {
+                SketchSearchRepository.getCachedFiveSync(this, targetChar, targetSeries)?.let { cached ->
+                    renderResults(cached)
+                    return
+                }
+            }
+
+            bodyCol.removeAllViews()
+            val loadingCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = UiTheme.round(this@MainActivity, UiTheme.surface, 18, UiTheme.stroke)
+                setPadding(dp(20), dp(34), dp(20), dp(34))
+                addView(ProgressBar(this@MainActivity).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { bottomMargin = dp(12) })
+                addView(TextView(this@MainActivity).apply {
+                    text = L.t("searching_sketches")
+                    textSize = 13.5f
+                    UiTheme.applyUiFont(this, bold = true)
+                    setTextColor(UiTheme.textSub)
+                    gravity = Gravity.CENTER
+                })
+            }
+            bodyCol.addView(loadingCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+            bodyCol.addView(buildMorePhotosBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
+            SketchSearchRepository.getFiveSketches(targetChar, targetSeries, forceRefresh) { results ->
+                if (flow != Flow.CHAR_GALLERY || isFinishing || isDestroyed) return@getFiveSketches
+                if (selectedCharacterName != targetChar || selectedCharacterSeries != targetSeries) return@getFiveSketches
+                renderResults(results)
             }
         }
 

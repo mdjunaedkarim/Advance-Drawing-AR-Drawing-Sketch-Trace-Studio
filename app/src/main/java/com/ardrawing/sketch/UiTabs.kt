@@ -43,7 +43,7 @@ object UiTabs {
     var selectedCat: Samples.Cat = Samples.Cat.ALL
     val selectedFiles = HashSet<String>()
     private var storeCoinsTab = true
-    private var homeShuffleSeed: Long = System.currentTimeMillis()
+    var homeShuffleSeed: Long = System.currentTimeMillis()
 
     private fun catIcon(cat: Samples.Cat): StudioIcons.Type = when (cat) {
         Samples.Cat.ALL -> StudioIcons.Type.CAT_ALL
@@ -197,11 +197,20 @@ object UiTabs {
                         clipRounded(this, dp(8).toFloat())
                     }
                     addView(thumb, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-                    val loadBar = ProgressBar(act).apply { isIndeterminate = true }
-                    addView(loadBar, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
-                    SketchSearchRepository.loadThumbBitmap(act, item) { bmp ->
-                        loadBar.visibility = View.GONE
-                        if (bmp != null) thumb.setImageBitmap(bmp)
+                    val cachedThumb = SketchSearchRepository.getCachedThumbSync(act, item)
+                    if (cachedThumb != null) {
+                        thumb.setImageBitmap(cachedThumb)
+                    } else {
+                        val loadBar = ProgressBar(act).apply { isIndeterminate = true }
+                        addView(loadBar, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER))
+                        SketchSearchRepository.loadThumbBitmap(act, item) { bmp ->
+                            loadBar.visibility = View.GONE
+                            if (bmp != null) {
+                                thumb.alpha = 0f
+                                thumb.setImageBitmap(bmp)
+                                thumb.animate().alpha(1f).setDuration(120).start()
+                            }
+                        }
                     }
                 }
                 addView(thumbFrame, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
@@ -610,7 +619,13 @@ object UiTabs {
                 }
                 setPadding(dp(13), dp(9), dp(14), dp(9))
                 elevation = if (active) dp(4).toFloat() else dp(1).toFloat()
-                UiTheme.bounce(this) { selectedCat = cat; onRefresh() }
+                UiTheme.bounce(this) {
+                    selectedCat = cat
+                    if (cat != Samples.Cat.ALL && cat != Samples.Cat.ANIME) {
+                        SketchSearchRepository.prewarmTopics(act, CategoryCatalog.itemsForCategory(cat))
+                    }
+                    onRefresh()
+                }
             }
             catRow.addView(chip, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
         }
@@ -654,6 +669,11 @@ object UiTabs {
                     setPadding(dp(10), dp(5), dp(10), dp(5))
                     UiTheme.bounce(this) {
                         homeShuffleSeed = System.nanoTime()
+                        SketchSearchRepository.prewarmTopics(
+                            act,
+                            CategoryCatalog.randomMixedSpotlight(homeShuffleSeed, 14) +
+                                CategoryCatalog.randomMixedGrid(homeShuffleSeed, 16)
+                        )
                         onRefresh()
                     }
                 }
@@ -704,15 +724,25 @@ object UiTabs {
                     }
                     addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
-                    val spinner = ProgressBar(act).apply { isIndeterminate = true }
-                    addView(spinner, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                    val cachedPreview = SketchSearchRepository.getCachedPreviewSync(act, item)
+                    if (cachedPreview != null) {
+                        iv.setImageBitmap(cachedPreview)
+                    } else {
+                        iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 42, Color.parseColor("#E5E7EB")))
+                        val miniSpin = ProgressBar(act).apply { isIndeterminate = true }
+                        addView(miniSpin, FrameLayout.LayoutParams(dp(14), dp(14), Gravity.BOTTOM or Gravity.END).apply {
+                            setMargins(0, 0, dp(3), dp(3))
+                        })
 
-                    SketchSearchRepository.loadTopicPreviewBitmap(act, item) { bmp ->
-                        spinner.visibility = View.GONE
-                        if (bmp != null) {
-                            iv.setImageBitmap(bmp)
-                        } else {
-                            iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 34, UiTheme.accentBright))
+                        SketchSearchRepository.loadTopicPreviewBitmap(act, item) { bmp ->
+                            miniSpin.visibility = View.GONE
+                            if (bmp != null) {
+                                iv.alpha = 0f
+                                iv.setImageBitmap(bmp)
+                                iv.animate().alpha(1f).setDuration(140).start()
+                            } else {
+                                iv.setImageDrawable(StudioIcons.icon(act, catIcon(item.cat), 38, UiTheme.accentBright))
+                            }
                         }
                     }
 
