@@ -231,9 +231,14 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(24), safeTop(), dp(24), dp(42))
         }
+        val logoHero = FrameLayout(this)
+        logoHero.addView(
+            StudioIcons.SplashAuraView(this),
+            FrameLayout.LayoutParams(dp(236), dp(236), Gravity.CENTER)
+        )
         val logoCard = FrameLayout(this).apply {
-            background = UiTheme.round(this@MainActivity, Color.WHITE, 34, UiTheme.stroke, 2)
-            elevation = dp(12).toFloat()
+            background = UiTheme.round(this@MainActivity, Color.WHITE, 34, Color.parseColor("#66FFFFFF"), 2)
+            UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 16)
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(34).toFloat()) }
             }
@@ -247,14 +252,16 @@ class MainActivity : ComponentActivity() {
                 FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
             )
         }
-        centerCol.addView(logoCard, LinearLayout.LayoutParams(dp(168), dp(168)).apply { bottomMargin = dp(8) })
+        logoHero.addView(logoCard, FrameLayout.LayoutParams(dp(152), dp(152), Gravity.CENTER))
+        UiTheme.attachGentleFloat(logoCard, 3.5f, 2600L)
+        centerCol.addView(logoHero, LinearLayout.LayoutParams(dp(236), dp(236)).apply { bottomMargin = dp(4) })
         centerCol.addView(TextView(this).apply {
             text = L.t("app")
-            textSize = 25f
+            textSize = 26f
             UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, dp(4))
+            setPadding(0, dp(4), 0, dp(4))
         })
         centerCol.addView(TextView(this).apply {
             text = L.t("splash_sub")
@@ -263,10 +270,16 @@ class MainActivity : ComponentActivity() {
             setTextColor(UiTheme.textSub)
             gravity = Gravity.CENTER
         })
-        centerCol.scaleX = 0.85f
-        centerCol.scaleY = 0.85f
+        centerCol.scaleX = 0.84f
+        centerCol.scaleY = 0.84f
         centerCol.alpha = 0f
-        centerCol.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(460).start()
+        centerCol.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(540)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.18f))
+            .start()
 
         val bottomCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -368,14 +381,14 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(UiTheme.surface)
             setPadding(dp(16), safeTop() + dp(10), dp(16), dp(12))
-            elevation = dp(4).toFloat()
+            elevation = dp(5).toFloat()
         }
         val topLogoBox = FrameLayout(this).apply {
             outlineProvider = object : ViewOutlineProvider() {
-                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(9).toFloat()) }
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(10).toFloat()) }
             }
             clipToOutline = true
-            elevation = dp(2).toFloat()
+            UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 4)
             addView(
                 ImageView(this@MainActivity).apply {
                     setImageResource(R.drawable.app_logo)
@@ -387,20 +400,31 @@ class MainActivity : ComponentActivity() {
         }
         topBar.addView(
             topLogoBox,
-            LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
+            LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(10) }
         )
-        topBar.addView(TextView(this).apply {
+        val titleStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        titleStack.addView(TextView(this).apply {
             text = when (currentTab) {
                 Tab.HOME -> L.t("app")
                 Tab.GALLERY -> L.t("my_activity")
                 Tab.STORE -> L.t("store_title")
                 Tab.SETTINGS -> L.t("settings")
             }
-            textSize = 18.5f
+            textSize = 18f
             UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             maxLines = 1
-        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+        })
+        if (currentTab == Tab.HOME) {
+            titleStack.addView(TextView(this).apply {
+                text = L.t("studio_badge")
+                textSize = 10.5f
+                UiTheme.applyUiFont(this, bold = true)
+                setTextColor(UiTheme.accentBright)
+                maxLines = 1
+            })
+        }
+        topBar.addView(titleStack, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
 
         if (billingAds.adsRemoved) {
             val shieldPill = StudioIcons.iconPill(
@@ -413,8 +437,9 @@ class MainActivity : ComponentActivity() {
                 textSizeSp = 10.5f,
                 filled = billingAds.permanentAdsRemoved
             ).apply {
-                background = UiTheme.grad(this@MainActivity, "#10B981", "#059669", 12)
-                setPadding(dp(8), dp(4), dp(8), dp(4))
+                background = UiTheme.premiumGrad(this@MainActivity, "#10B981", "#059669", 12)
+                UiTheme.applyColoredShadow(this, Color.parseColor("#10B981"), 5)
+                setPadding(dp(9), dp(4), dp(9), dp(4))
                 UiTheme.bounce(this) { currentTab = Tab.STORE; renderMain() }
             }
             topBar.addView(shieldPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) })
@@ -430,12 +455,14 @@ class MainActivity : ComponentActivity() {
             textSizeSp = 13.5f,
             trailingIcon = StudioIcons.Type.PLUS
         ).apply {
-            background = UiTheme.round(this@MainActivity, UiTheme.accentSoft, 18, UiTheme.accentBright)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = UiTheme.premiumSurface(this@MainActivity, UiTheme.accentSoft, 18, UiTheme.accentBright, 1)
+            elevation = dp(3).toFloat()
+            setPadding(dp(11), dp(6), dp(11), dp(6))
             UiTheme.bounce(this) { currentTab = Tab.STORE; renderMain() }
         }
         topBar.addView(coinWalletPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(36)))
         mainCol.addView(topBar)
+        mainCol.addView(View(this).apply { setBackgroundColor(UiTheme.stroke) }, LinearLayout.LayoutParams(MATCH_PARENT, dp(1)))
 
         val body = when (currentTab) {
             Tab.HOME -> UiTabs.buildHome(
@@ -455,6 +482,7 @@ class MainActivity : ComponentActivity() {
             Tab.STORE -> UiTabs.buildStore(this, billingAds)
             Tab.SETTINGS -> UiTabs.buildSettings(this, prefs, { showFlow(Flow.LANG) }, { showFlow(Flow.PRIVACY) }) { renderMain() }
         }
+        UiTheme.animatePageIn(body, 12, 220L)
         mainCol.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
         if (!billingAds.adsRemoved) {
@@ -466,9 +494,9 @@ class MainActivity : ComponentActivity() {
         // Floating Capsule Studio Dock with Crisp Vector Icons
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = UiTheme.round(this@MainActivity, UiTheme.surface, 24, UiTheme.stroke, 1)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 26, UiTheme.strokeStrong, 1)
             setPadding(dp(8), dp(7), dp(8), dp(7))
-            elevation = dp(12).toFloat()
+            elevation = dp(14).toFloat()
         }
         listOf(
             Triple(Tab.HOME, StudioIcons.Type.HOME, L.t("home")),
@@ -481,8 +509,13 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dp(4), dp(8), dp(4), dp(8))
-                background = if (sel) UiTheme.grad(this@MainActivity, "#7C3AED", "#4F46E5", 18) else null
-                elevation = if (sel) dp(4).toFloat() else 0f
+                background = if (sel) {
+                    UiTheme.premiumGrad(this@MainActivity, "#7C3AED", "#4F46E5", 19)
+                } else {
+                    UiTheme.premiumSurface(this@MainActivity, Color.TRANSPARENT, 19, null)
+                }
+                if (sel) UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 6)
+                else elevation = 0f
                 addView(
                     StudioIcons.imageView(
                         this@MainActivity,
@@ -601,7 +634,7 @@ class MainActivity : ComponentActivity() {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.round(
+                    background = UiTheme.premiumSurface(
                         this@MainActivity,
                         UiTheme.surface,
                         16,
@@ -651,7 +684,8 @@ class MainActivity : ComponentActivity() {
                             textSizeSp = 11.5f,
                             trailingIcon = StudioIcons.Type.ARROW_RIGHT
                         ).apply {
-                            background = UiTheme.grad(this@MainActivity, "#0EA5E9", "#2563EB", 10)
+                            background = UiTheme.premiumGrad(this@MainActivity, "#0EA5E9", "#2563EB", 10)
+                            UiTheme.applyColoredShadow(this, Color.parseColor("#0EA5E9"), 4)
                             setPadding(dp(10), dp(6), dp(10), dp(6))
                         }
                     )
@@ -709,6 +743,7 @@ class MainActivity : ComponentActivity() {
         })
 
         main.addView(ScrollView(this).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        UiTheme.animatePageIn(main, 12, 220L)
         root.addView(main, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         applyInsetsCallback = {
             main.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(8))
@@ -1251,17 +1286,23 @@ class MainActivity : ComponentActivity() {
     private fun destroyWebView() { activeWebView?.destroy(); activeWebView = null }
 
     private fun showCuteSourcePopup() {
-        val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#88000000")) }
+        val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#99040712")) }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.round(this@MainActivity, UiTheme.surface, 26, UiTheme.stroke)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28, UiTheme.strokeStrong, 1)
             setPadding(dp(20), dp(22), dp(20), dp(20))
-            elevation = dp(12).toFloat()
+            elevation = dp(18).toFloat()
+        }
+        fun dismiss(after: (() -> Unit)? = null) {
+            UiTheme.animateModalOut(backdrop, card) {
+                root.removeView(backdrop)
+                after?.invoke()
+            }
         }
         card.addView(TextView(this).apply {
             text = L.t("choose_source")
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
+            textSize = 19f
+            UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(16))
@@ -1270,11 +1311,11 @@ class MainActivity : ComponentActivity() {
         fun optBtn(icon: StudioIcons.Type, title: String, c1: String, c2: String, onTap: () -> Unit) = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = UiTheme.grad(this@MainActivity, c1, c2, 22, Color.parseColor("#33FFFFFF"))
+            background = UiTheme.premiumGrad(this@MainActivity, c1, c2, 22)
             setPadding(dp(12), dp(20), dp(12), dp(20))
-            elevation = dp(5).toFloat()
+            UiTheme.applyColoredShadow(this, Color.parseColor(c1), 9)
             val well = FrameLayout(this@MainActivity).apply {
-                background = UiTheme.round(this@MainActivity, Color.parseColor("#28FFFFFF"), 18)
+                background = UiTheme.round(this@MainActivity, Color.parseColor("#2EFFFFFF"), 18, Color.parseColor("#44FFFFFF"))
                 addView(
                     StudioIcons.imageView(this@MainActivity, icon, 28, Color.WHITE),
                     FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER)
@@ -1284,12 +1325,12 @@ class MainActivity : ComponentActivity() {
             addView(TextView(this@MainActivity).apply {
                 text = title
                 textSize = 14f
-                setTypeface(null, Typeface.BOLD)
+                UiTheme.applyDisplayFont(this, true)
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setPadding(0, dp(10), 0, 0)
             })
-            UiTheme.bounce(this) { root.removeView(backdrop); onTap() }
+            UiTheme.bounce(this) { dismiss(onTap) }
         }
         row.addView(optBtn(StudioIcons.Type.CAMERA, L.t("take_photo"), "#8B5CF6", "#6D28D9") { openCamCapture() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(12) })
         row.addView(optBtn(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; openLightboxAfterPick = false; pickGalleryLauncher.launch("image/*") }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -1302,39 +1343,46 @@ class MainActivity : ComponentActivity() {
                 textColor = UiTheme.textSub,
                 iconColor = UiTheme.textSub,
                 rDp = 15
-            ) { root.removeView(backdrop) },
+            ) { dismiss() },
             LinearLayout.LayoutParams(MATCH_PARENT, dp(48))
         )
-        backdrop.setOnClickListener { root.removeView(backdrop) }; card.setOnClickListener { }
+        backdrop.setOnClickListener { dismiss() }; card.setOnClickListener { }
         backdrop.addView(card, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER).apply { setMargins(dp(24), 0, dp(24), 0) })
         root.addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        UiTheme.animateModalIn(backdrop, card)
     }
 
     private fun showCuteImportPopup() {
-        val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#88000000")) }
+        val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#99040712")) }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = UiTheme.round(this@MainActivity, UiTheme.surface, 26, UiTheme.stroke)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28, UiTheme.strokeStrong, 1)
             setPadding(dp(20), dp(22), dp(20), dp(20))
-            elevation = dp(12).toFloat()
+            elevation = dp(18).toFloat()
+        }
+        fun dismiss(after: (() -> Unit)? = null) {
+            UiTheme.animateModalOut(backdrop, card) {
+                root.removeView(backdrop)
+                after?.invoke()
+            }
         }
         card.addView(TextView(this).apply {
             text = L.t("import_title")
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
+            textSize = 19f
+            UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(16))
         })
         card.addView(
             UiTheme.studioGradientAction(this, StudioIcons.Type.FOLDER, L.t("choose_file"), "#3B82F6", "#2563EB", 16) {
-                root.removeView(backdrop); pickAnyFileLauncher.launch("*/*")
+                dismiss { pickAnyFileLauncher.launch("*/*") }
             },
             LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { bottomMargin = dp(10) }
         )
         card.addView(
             UiTheme.studioGradientAction(this, StudioIcons.Type.LINK, L.t("paste_link"), "#8B5CF6", "#6D28D9", 16) {
-                root.removeView(backdrop); showLinkInputDialog()
+                dismiss { showLinkInputDialog() }
             },
             LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { bottomMargin = dp(10) }
         )
@@ -1346,12 +1394,13 @@ class MainActivity : ComponentActivity() {
                 textColor = UiTheme.textSub,
                 iconColor = UiTheme.textSub,
                 rDp = 15
-            ) { root.removeView(backdrop) },
+            ) { dismiss() },
             LinearLayout.LayoutParams(MATCH_PARENT, dp(48))
         )
-        backdrop.setOnClickListener { root.removeView(backdrop) }; card.setOnClickListener { }
+        backdrop.setOnClickListener { dismiss() }; card.setOnClickListener { }
         backdrop.addView(card, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER).apply { setMargins(dp(24), 0, dp(24), 0) })
         root.addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        UiTheme.animateModalIn(backdrop, card)
     }
 
     private fun showLinkInputDialog() {
@@ -1770,18 +1819,18 @@ class MainActivity : ComponentActivity() {
             setTextColor(UiTheme.textSub); textSize = 12f
         }
         pickPanel.addView(tolLabel)
-        pickPanel.addView(SeekBar(this).apply {
+        pickPanel.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 90; progress = colorTolerance
             setOnSeekBarChangeListener(simpleSeek { p ->
                 colorTolerance = p.coerceAtLeast(8)
                 tolLabel.text = "${L.t("tolerance")}: $colorTolerance%"
             })
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+        }, "#EC4899", "#F43F5E"), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
 
         val pickActionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val removePickedBtn = makeToolBox().apply {
-            background = UiTheme.grad(this@MainActivity, "#EF4444", "#DC2626", 14)
-            elevation = dp(3).toFloat()
+            background = UiTheme.premiumGrad(this@MainActivity, "#EF4444", "#DC2626", 14)
+            UiTheme.applyColoredShadow(this, Color.parseColor("#EF4444"), 6)
             setToolContent(this, StudioIcons.Type.ERASER, L.t("remove_picked_color"), Color.WHITE)
         }
         val donePickBtn = UiTheme.studioSoftAction(
@@ -1807,24 +1856,24 @@ class MainActivity : ComponentActivity() {
             }
 
             setToolContent(autoBgBtn, StudioIcons.Type.MAGIC_BG, if (isProcessingBg) L.t("removing_bg") else L.t("remove_bg"), Color.WHITE)
-            autoBgBtn.background = UiTheme.grad(this, "#3B82F6", "#2563EB", 15, Color.parseColor("#33FFFFFF"))
-            autoBgBtn.elevation = dp(4).toFloat()
+            autoBgBtn.background = UiTheme.premiumGrad(this, "#3B82F6", "#2563EB", 15)
+            UiTheme.applyColoredShadow(autoBgBtn, Color.parseColor("#3B82F6"), 6)
 
             setToolContent(keepLinesBtn, StudioIcons.Type.INK_PEN, if (isProcessingBg) L.t("removing_bg") else L.t("keep_lines"), Color.WHITE)
-            keepLinesBtn.background = UiTheme.grad(this, "#8B5CF6", "#6D28D9", 15, Color.parseColor("#33FFFFFF"))
-            keepLinesBtn.elevation = dp(4).toFloat()
+            keepLinesBtn.background = UiTheme.premiumGrad(this, "#8B5CF6", "#6D28D9", 15)
+            UiTheme.applyColoredShadow(keepLinesBtn, Color.parseColor("#8B5CF6"), 6)
 
             setToolContent(cropBtn, StudioIcons.Type.CROP, L.t("crop_resize"), Color.WHITE)
-            cropBtn.background = UiTheme.grad(this, "#0EA5E9", "#0284C7", 15, Color.parseColor("#33FFFFFF"))
-            cropBtn.elevation = dp(4).toFloat()
+            cropBtn.background = UiTheme.premiumGrad(this, "#0EA5E9", "#0284C7", 15)
+            UiTheme.applyColoredShadow(cropBtn, Color.parseColor("#0EA5E9"), 6)
 
             if (isColorPickMode) {
                 setToolContent(pickColorBtn, StudioIcons.Type.EYEDROPPER, L.t("pick_color_btn"), Color.WHITE)
-                pickColorBtn.background = UiTheme.grad(this, "#EC4899", "#DB2777", 15, Color.parseColor("#33FFFFFF"))
-                pickColorBtn.elevation = dp(4).toFloat()
+                pickColorBtn.background = UiTheme.premiumGrad(this, "#EC4899", "#DB2777", 15)
+                UiTheme.applyColoredShadow(pickColorBtn, Color.parseColor("#EC4899"), 6)
             } else {
                 setToolContent(pickColorBtn, StudioIcons.Type.EYEDROPPER, L.t("pick_color_btn"), UiTheme.textMain)
-                pickColorBtn.background = UiTheme.round(this, UiTheme.surface, 15, UiTheme.stroke)
+                pickColorBtn.background = UiTheme.premiumSurface(this, UiTheme.surface, 15, UiTheme.stroke)
                 pickColorBtn.elevation = dp(2).toFloat()
             }
 
@@ -1837,7 +1886,7 @@ class MainActivity : ComponentActivity() {
             )
             undoBtn.isEnabled = canRestore && !isProcessingBg
             undoBtn.alpha = if (undoBtn.isEnabled) 1f else 0.45f
-            undoBtn.background = UiTheme.round(this, UiTheme.surfaceAlt, 15, UiTheme.stroke)
+            undoBtn.background = UiTheme.premiumSurface(this, UiTheme.surfaceAlt, 15, UiTheme.stroke)
 
             pickPanel.visibility = if (isColorPickMode) View.VISIBLE else View.GONE
             colorSwatch.removeAllViews()
@@ -2018,14 +2067,14 @@ class MainActivity : ComponentActivity() {
         }
         opHead.addView(opPctBadge)
         opCard.addView(opHead, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(6) })
-        opCard.addView(SeekBar(this).apply {
+        opCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 opacityPercent = p.coerceAtLeast(10)
                 opPctBadge.text = "$opacityPercent%"
                 previewIv.alpha = opacityPercent / 100f
             })
-        })
+        }, "#7C3AED", "#EC4899"))
         col.addView(opCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
         col.addView(TextView(this).apply {
@@ -2043,39 +2092,43 @@ class MainActivity : ComponentActivity() {
             c1: String,
             c2: String,
             onTap: () -> Unit
-        ): LinearLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.grad(this@MainActivity, c1, c2, 18, Color.parseColor("#33FFFFFF"))
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            elevation = dp(5).toFloat()
-            val well = FrameLayout(this@MainActivity).apply {
-                background = UiTheme.round(this@MainActivity, Color.parseColor("#2AFFFFFF"), 14)
+        ): FrameLayout {
+            val inner = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = UiTheme.premiumGrad(this@MainActivity, c1, c2, 19)
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                val well = FrameLayout(this@MainActivity).apply {
+                    background = UiTheme.round(this@MainActivity, Color.parseColor("#2EFFFFFF"), 14, Color.parseColor("#44FFFFFF"))
+                    addView(
+                        StudioIcons.imageView(this@MainActivity, icon, 22, Color.WHITE),
+                        FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                    )
+                }
+                addView(well, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
+                val tc = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+                tc.addView(TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 15.5f
+                    UiTheme.applyDisplayFont(this, true)
+                    setTextColor(Color.WHITE)
+                })
+                tc.addView(TextView(this@MainActivity).apply {
+                    text = sub
+                    textSize = 11.5f
+                    UiTheme.applyUiFont(this)
+                    setTextColor(Color.parseColor("#E2E8F0"))
+                })
+                addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
                 addView(
-                    StudioIcons.imageView(this@MainActivity, icon, 22, Color.WHITE),
-                    FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                    StudioIcons.imageView(this@MainActivity, StudioIcons.Type.ARROW_RIGHT, 18, Color.WHITE),
+                    LinearLayout.LayoutParams(dp(18), dp(18))
                 )
+                UiTheme.bounce(this, onTap)
             }
-            addView(well, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
-            val tc = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-            tc.addView(TextView(this@MainActivity).apply {
-                text = title
-                textSize = 15f
-                UiTheme.applyDisplayFont(this, true)
-                setTextColor(Color.WHITE)
-            })
-            tc.addView(TextView(this@MainActivity).apply {
-                text = sub
-                textSize = 11.5f
-                UiTheme.applyUiFont(this)
-                setTextColor(Color.parseColor("#E2E8F0"))
-            })
-            addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-            addView(
-                StudioIcons.imageView(this@MainActivity, StudioIcons.Type.ARROW_RIGHT, 18, Color.WHITE),
-                LinearLayout.LayoutParams(dp(18), dp(18))
-            )
-            UiTheme.bounce(this, onTap)
+            return UiTheme.wrapShimmerCta(this, inner, 19).apply {
+                UiTheme.applyColoredShadow(this, Color.parseColor(c1), 9)
+            }
         }
 
         val cameraModeBtn = drawModeCard(
@@ -2094,7 +2147,7 @@ class MainActivity : ComponentActivity() {
                 cameraPermLauncher.launch(Manifest.permission.CAMERA)
             }
         }
-        col.addView(cameraModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
+        col.addView(cameraModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(76)).apply { bottomMargin = dp(10) })
 
         val lightboxModeBtn = drawModeCard(
             icon = StudioIcons.Type.SUN,
@@ -2112,8 +2165,9 @@ class MainActivity : ComponentActivity() {
                 showFlow(Flow.LIGHTBOX)
             }
         }
-        col.addView(lightboxModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+        col.addView(lightboxModeBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(76)).apply { bottomMargin = dp(14) })
 
+        UiTheme.animatePageIn(col, 14, 240L)
         root.addView(ScrollView(this).apply { addView(col) }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         applyInsetsCallback = {
             col.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(16))
@@ -2286,14 +2340,14 @@ class MainActivity : ComponentActivity() {
         }
         opRow.addView(opTv)
         bottomCard.addView(opRow)
-        bottomCard.addView(SeekBar(this).apply {
+        bottomCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 opacityPercent = p.coerceAtLeast(10)
                 opTv.text = "${L.t("opacity")}  $opacityPercent%"
                 overlay.setOpacity(opacityPercent)
             })
-        })
+        }, "#8B5CF6", "#EC4899", darkSurface = true))
 
         val brRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(6), 0, 0) }
         brRow.addView(StudioIcons.imageView(this, StudioIcons.Type.SUN, 16, Color.parseColor("#FBBF24")), LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
@@ -2306,14 +2360,14 @@ class MainActivity : ComponentActivity() {
         }
         brRow.addView(brTv)
         bottomCard.addView(brRow)
-        bottomCard.addView(SeekBar(this).apply {
+        bottomCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 100; progress = brightnessPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 brightnessPercent = p.coerceAtLeast(10)
                 brTv.text = "${L.t("brightness")}  $brightnessPercent%"
                 window.attributes = window.attributes.apply { screenBrightness = brightnessPercent / 100f }
             })
-        })
+        }, "#F59E0B", "#FDE047", darkSurface = true))
 
         val hideBtn = FrameLayout(this).apply {
             background = UiTheme.round(this@MainActivity, glassFill, 24, glassStroke)
@@ -2382,6 +2436,9 @@ class MainActivity : ComponentActivity() {
         root.addView(topBar, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
         root.addView(hintPill, hintLp)
         root.addView(bottomCard, bottomLp)
+        UiTheme.animatePageIn(topBar, -14, 240L)
+        UiTheme.animatePageIn(hintPill, -10, 280L)
+        UiTheme.animatePageIn(bottomCard, 22, 260L)
         applyInsetsCallback = {
             topBar.setPadding(dp(14), safeTop() + dp(8), dp(14), 0)
             hintLp.topMargin = safeTop() + dp(68)
@@ -2533,7 +2590,7 @@ class MainActivity : ComponentActivity() {
         }
         opRow.addView(resetPosChip)
         bottomCard.addView(opRow)
-        bottomCard.addView(SeekBar(this).apply {
+        bottomCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 if (isLightboxLocked) return@simpleSeek
@@ -2541,7 +2598,7 @@ class MainActivity : ComponentActivity() {
                 opTv.text = "${L.t("opacity")}  $opacityPercent%"
                 overlay.setOpacity(opacityPercent)
             })
-        })
+        }, "#8B5CF6", "#EC4899", darkSurface = true))
 
         val brRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(6), 0, 0) }
         brRow.addView(StudioIcons.imageView(this, StudioIcons.Type.SUN, 16, Color.parseColor("#FBBF24")), LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
@@ -2556,7 +2613,7 @@ class MainActivity : ComponentActivity() {
             textSize = 10.5f
             UiTheme.applyDisplayFont(this, true)
             setTextColor(Color.parseColor("#1E1B4B"))
-            background = UiTheme.grad(this@MainActivity, "#FDE047", "#F59E0B", 9)
+            background = UiTheme.premiumGrad(this@MainActivity, "#FDE047", "#F59E0B", 9)
             setPadding(dp(8), dp(2), dp(8), dp(2))
         }
         brRow.addView(brTv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -2584,13 +2641,13 @@ class MainActivity : ComponentActivity() {
         }
         applyLightboxBrightness(brightnessPercent)
 
-        bottomCard.addView(SeekBar(this).apply {
+        bottomCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 200; progress = brightnessPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
                 if (isLightboxLocked) return@simpleSeek
                 applyLightboxBrightness(p)
             })
-        })
+        }, "#F59E0B", "#FDE047", darkSurface = true))
 
         // Full-Screen Touch Blocker (enabled ONLY when locked — blocks canvas, sliders & all buttons except Lock button)
         val touchBlocker = View(this).apply {
@@ -2618,7 +2675,8 @@ class MainActivity : ComponentActivity() {
                 overlay.lock()
                 touchBlocker.visibility = View.VISIBLE
                 lockIv.setImageDrawable(StudioIcons.icon(this, StudioIcons.Type.UNLOCK, 22, Color.WHITE, filled = true))
-                lockBtn.background = UiTheme.grad(this, "#10B981", "#059669", 24, Color.parseColor("#88FFFFFF"))
+                lockBtn.background = UiTheme.premiumGrad(this, "#10B981", "#059669", 24, Color.parseColor("#88FFFFFF"))
+                UiTheme.applyColoredShadow(lockBtn, Color.parseColor("#10B981"), 16)
                 hintTv.text = L.t("lightbox_locked")
                 hintDot.background = UiTheme.round(this, Color.parseColor("#10B981"), 5)
                 topPill.animate().alpha(0.18f).setDuration(180).start()
@@ -2628,6 +2686,7 @@ class MainActivity : ComponentActivity() {
                 touchBlocker.visibility = View.GONE
                 lockIv.setImageDrawable(StudioIcons.icon(this, StudioIcons.Type.LOCK, 22, Color.WHITE))
                 lockBtn.background = UiTheme.round(this, glassFill, 24, glassStroke)
+                lockBtn.elevation = dp(16).toFloat()
                 hintTv.text = L.t("lightbox_hint")
                 hintDot.background = UiTheme.round(this, Color.parseColor("#FBBF24"), 5)
                 topPill.animate().alpha(1f).setDuration(180).start()
@@ -2655,6 +2714,10 @@ class MainActivity : ComponentActivity() {
         root.addView(bottomCard, bottomLp)
         root.addView(touchBlocker, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(lockBtn, lockBtnLp)
+        UiTheme.animatePageIn(topPill, -14, 240L)
+        UiTheme.animatePageIn(lockBtn, -14, 240L)
+        UiTheme.animatePageIn(hintPill, -10, 280L)
+        UiTheme.animatePageIn(bottomCard, 22, 260L)
 
         applyInsetsCallback = {
             topPillLp.setMargins(dp(14), safeTop() + dp(8), 0, 0)
@@ -2679,9 +2742,9 @@ class MainActivity : ComponentActivity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28, UiTheme.stroke)
+            background = UiTheme.round(this@MainActivity, UiTheme.surface, 28, UiTheme.strokeStrong)
             setPadding(dp(24), dp(28), dp(24), dp(26))
-            elevation = dp(10).toFloat()
+            elevation = dp(12).toFloat()
         }
         card.addView(
             StudioIcons.CelebrationArtView(this),
@@ -2689,7 +2752,7 @@ class MainActivity : ComponentActivity() {
         )
         card.addView(TextView(this).apply {
             text = L.t("congrats")
-            textSize = 25f
+            textSize = 26f
             UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             gravity = Gravity.CENTER
@@ -2702,13 +2765,18 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(24))
         })
-        card.addView(
-            UiTheme.studioGradientAction(this, StudioIcons.Type.HOME, L.t("go_home"), "#7C3AED", "#4F46E5", 16) {
+        val homeCta = UiTheme.wrapShimmerCta(
+            this,
+            UiTheme.studioGradientAction(this, StudioIcons.Type.HOME, L.t("go_home"), "#7C3AED", "#4F46E5", 17) {
                 showFlow(Flow.MAIN)
             },
-            LinearLayout.LayoutParams(MATCH_PARENT, dp(52))
-        )
+            17
+        ).apply {
+            UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 9)
+        }
+        card.addView(homeCta, LinearLayout.LayoutParams(MATCH_PARENT, dp(54)))
         col.addView(card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        UiTheme.animatePageIn(card, 20, 320L)
         root.addView(col, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         applyInsetsCallback = {
             col.setPadding(dp(24), safeTop() + dp(16), dp(24), safeBottom() + dp(16))

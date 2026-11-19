@@ -8,6 +8,7 @@ import android.graphics.ColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.PixelFormat
 import android.graphics.RadialGradient
 import android.graphics.RectF
@@ -928,25 +929,35 @@ object StudioIcons {
         override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
     }
 
-    // ---------------- CUSTOM PROGRAMMATIC HERO ARCHITECTURAL BACKDROP ----------------
+    // ---------------- LIVE ANIMATED HERO ARCHITECTURAL BACKDROP ----------------
     class HeroStudioBackdropView(context: Context) : View(context) {
+        private var phase = 0f
+        private val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 6400L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+        }
         private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            color = Color.parseColor("#18FFFFFF")
-            strokeWidth = 1.5f
+            color = Color.parseColor("#16FFFFFF")
+            strokeWidth = 1.4f
         }
         private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            color = Color.parseColor("#24FFFFFF")
+            color = Color.parseColor("#2AFFFFFF")
             strokeWidth = 2f
         }
         private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val reticlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
-            color = Color.parseColor("#44FDE047")
+            color = Color.parseColor("#55FDE047")
             strokeWidth = 3.5f
         }
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -954,12 +965,28 @@ object StudioIcons {
             val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
 
-            // Soft radial ambient studio glow top-right
+            val wave = Math.sin(phase * Math.PI * 2.0).toFloat()
+
+            // Breathing top-right magenta aurora glow
+            val gx = w * (0.84f + wave * 0.04f)
+            val gy = h * (0.20f - wave * 0.03f)
+            val gr = maxOf(w, h) * (0.52f + wave * 0.05f)
             glowPaint.shader = RadialGradient(
-                w * 0.85f, h * 0.22f, maxOf(w, h) * 0.55f,
-                Color.parseColor("#44EC4899"), Color.TRANSPARENT, Shader.TileMode.CLAMP
+                gx, gy, gr,
+                Color.parseColor("#52EC4899"), Color.TRANSPARENT, Shader.TileMode.CLAMP
             )
-            canvas.drawCircle(w * 0.85f, h * 0.22f, maxOf(w, h) * 0.55f, glowPaint)
+            canvas.drawCircle(gx, gy, gr, glowPaint)
+
+            // Secondary bottom-left cyan studio depth glow
+            val g2x = w * (0.14f - wave * 0.03f)
+            val g2y = h * (0.88f + wave * 0.03f)
+            val g2r = maxOf(w, h) * 0.44f
+            glowPaint.shader = RadialGradient(
+                g2x, g2y, g2r,
+                Color.parseColor("#3838BDF8"), Color.TRANSPARENT, Shader.TileMode.CLAMP
+            )
+            canvas.drawCircle(g2x, g2y, g2r, glowPaint)
+            glowPaint.shader = null
 
             // Subtle isometric drafting grid lines
             val step = 36f
@@ -974,25 +1001,107 @@ object StudioIcons {
                 y += step
             }
 
-            // Concentric AR tracking rings in top-right
+            // Concentric AR tracking rings in top-right with subtle pulse
             val rx = w * 0.86f
             val ry = h * 0.25f
-            canvas.drawCircle(rx, ry, h * 0.22f, ringPaint)
-            canvas.drawCircle(rx, ry, h * 0.36f, ringPaint)
+            canvas.drawCircle(rx, ry, h * (0.21f + wave * 0.015f), ringPaint)
+            canvas.drawCircle(rx, ry, h * (0.35f - wave * 0.012f), ringPaint)
 
-            // Precision viewfinder target brackets
-            val bx = w * 0.86f
-            val by = h * 0.25f
+            // Gently rotating precision viewfinder target brackets
+            canvas.save()
+            canvas.rotate(wave * 8f, rx, ry)
             val s = h * 0.11f
             val c = s * 0.38f
-            canvas.drawLine(bx - s, by - s + c, bx - s, by - s, reticlePaint)
-            canvas.drawLine(bx - s, by - s, bx - s + c, by - s, reticlePaint)
-            canvas.drawLine(bx + s - c, by - s, bx + s, by - s, reticlePaint)
-            canvas.drawLine(bx + s, by - s, bx + s, by - s + c, reticlePaint)
-            canvas.drawLine(bx - s, by + s - c, bx - s, by + s, reticlePaint)
-            canvas.drawLine(bx - s, by + s, bx - s + c, by + s, reticlePaint)
-            canvas.drawLine(bx + s - c, by + s, bx + s, by + s, reticlePaint)
-            canvas.drawLine(bx + s, by + s - c, bx + s, by + s, reticlePaint)
+            canvas.drawLine(rx - s, ry - s + c, rx - s, ry - s, reticlePaint)
+            canvas.drawLine(rx - s, ry - s, rx - s + c, ry - s, reticlePaint)
+            canvas.drawLine(rx + s - c, ry - s, rx + s, ry - s, reticlePaint)
+            canvas.drawLine(rx + s, ry - s, rx + s, ry - s + c, reticlePaint)
+            canvas.drawLine(rx - s, ry + s - c, rx - s, ry + s, reticlePaint)
+            canvas.drawLine(rx - s, ry + s, rx - s + c, ry + s, reticlePaint)
+            canvas.drawLine(rx + s - c, ry + s, rx + s, ry + s, reticlePaint)
+            canvas.drawLine(rx + s, ry + s - c, rx + s, ry + s, reticlePaint)
+            canvas.restore()
+        }
+    }
+
+    // ---------------- FLAGSHIP SPLASH ORBITAL AURA RING VIEW ----------------
+    class SplashAuraView(context: Context) : View(context) {
+        private var phase = 0f
+        private val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 3200L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+        }
+        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
+        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val cx = w / 2f
+            val cy = h / 2f
+            val s = minOf(w, h)
+
+            val pulse = (Math.sin(phase * Math.PI * 2.0).toFloat() + 1f) * 0.5f
+
+            // Ambient luxury halo behind logo
+            glowPaint.shader = RadialGradient(
+                cx, cy, s * (0.44f + pulse * 0.05f),
+                Color.parseColor("#55F97316"), Color.TRANSPARENT, Shader.TileMode.CLAMP
+            )
+            canvas.drawCircle(cx, cy, s * (0.44f + pulse * 0.05f), glowPaint)
+            glowPaint.shader = null
+
+            // Two expanding studio sonar rings
+            for (i in 0..1) {
+                val ph = (phase + i * 0.5f) % 1f
+                val r = s * (0.31f + ph * 0.17f)
+                val alpha = ((1f - ph) * 125).toInt().coerceIn(0, 255)
+                ringPaint.shader = null
+                ringPaint.color = Color.argb(alpha, 139, 92, 246)
+                ringPaint.strokeWidth = s * 0.012f
+                canvas.drawCircle(cx, cy, r, ringPaint)
+            }
+
+            // Orbiting dual neon precision arcs
+            val arcR = s * 0.415f
+            val arcRect = RectF(cx - arcR, cy - arcR, cx + arcR, cy + arcR)
+            ringPaint.strokeWidth = s * 0.016f
+            ringPaint.shader = LinearGradient(
+                arcRect.left, arcRect.top, arcRect.right, arcRect.bottom,
+                Color.parseColor("#F59E0B"), Color.parseColor("#EC4899"), Shader.TileMode.CLAMP
+            )
+            val rot = phase * 360f
+            canvas.drawArc(arcRect, rot, 76f, false, ringPaint)
+            canvas.drawArc(arcRect, rot + 180f, 76f, false, ringPaint)
+            ringPaint.shader = null
+
+            // 6 subtle orbiting starlight sparks
+            val sparkColors = intArrayOf(
+                Color.parseColor("#FDE047"),
+                Color.parseColor("#EC4899"),
+                Color.parseColor("#8B5CF6")
+            )
+            for (i in 0 until 6) {
+                val deg = i * 60f - phase * 180f
+                val rad = Math.toRadians(deg.toDouble())
+                val dist = s * (0.445f + (i % 2) * 0.025f)
+                val px = (cx + Math.cos(rad) * dist).toFloat()
+                val py = (cy + Math.sin(rad) * dist).toFloat()
+                dotPaint.color = sparkColors[i % sparkColors.size]
+                dotPaint.alpha = (120 + ((Math.sin((phase * 2.0 + i) * Math.PI).toFloat() + 1f) * 65)).toInt().coerceIn(60, 255)
+                canvas.drawCircle(px, py, s * (if (i % 2 == 0) 0.013f else 0.009f), dotPaint)
+            }
         }
     }
 
@@ -1051,15 +1160,27 @@ object StudioIcons {
         }
     }
 
-    // ---------------- PROGRAMMATIC GRADIENT PROGRESS BAR ----------------
+    // ---------------- SHIMMERING FLAGSHIP GRADIENT PROGRESS BAR ----------------
     class StudioProgressView(context: Context) : View(context) {
         var progress: Int = 0
             set(value) {
                 field = value.coerceIn(0, 100)
                 invalidate()
             }
+        private var shimmerPhase = 0f
+        private val anim = ValueAnimator.ofFloat(-0.3f, 1.3f).apply {
+            duration = 1350L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { shimmerPhase = it.animatedValue as Float; invalidate() }
+        }
         private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val shimmerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val tipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -1071,13 +1192,101 @@ object StudioIcons {
             canvas.drawRoundRect(RectF(0f, 0f, w, h), r, r, trackPaint)
 
             val fw = (w * (progress / 100f)).coerceAtLeast(h)
+            val barRect = RectF(0f, 0f, fw, h)
             fillPaint.shader = LinearGradient(
                 0f, 0f, fw, 0f,
-                Color.parseColor("#8B5CF6"),
-                Color.parseColor("#EC4899"),
+                intArrayOf(Color.parseColor("#7C3AED"), Color.parseColor("#EC4899"), Color.parseColor("#F59E0B")),
+                floatArrayOf(0f, 0.58f, 1f),
                 Shader.TileMode.CLAMP
             )
-            canvas.drawRoundRect(RectF(0f, 0f, fw, h), r, r, fillPaint)
+            canvas.drawRoundRect(barRect, r, r, fillPaint)
+
+            // Glossy sweeping light shimmer across progress fill
+            val sx = shimmerPhase * fw
+            shimmerPaint.shader = LinearGradient(
+                sx - h * 3f, 0f, sx + h * 3f, 0f,
+                intArrayOf(Color.TRANSPARENT, Color.parseColor("#77FFFFFF"), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(barRect, r, r, shimmerPaint)
+
+            // Luminous leading tip orb
+            if (fw > h * 1.4f) {
+                tipPaint.alpha = 220
+                canvas.drawCircle(fw - r, r, r * 0.55f, tipPaint)
+            }
+        }
+    }
+
+    // ---------------- SUBTLE PERIODIC GLOSS SHIMMER OVERLAY FOR FLAGSHIP CTA BUTTONS ----------------
+    class ShimmerSweepView(context: Context) : View(context) {
+        private var phase = 0f
+        private val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 3400L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+        }
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        init {
+            isClickable = false
+            isFocusable = false
+        }
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            // Sweep happens cleanly during the first 34% of each 3.4s cycle, then rests calmly
+            if (phase > 0.34f) return
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val t = phase / 0.34f
+            val bandW = w * 0.32f
+            val x = -bandW + t * (w + bandW * 2f)
+            paint.shader = LinearGradient(
+                x, 0f, x + bandW, h * 0.65f,
+                intArrayOf(Color.TRANSPARENT, Color.parseColor("#36FFFFFF"), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, 0f, w, h, paint)
+        }
+    }
+
+    // ---------------- LUXURY SKELETON SHIMMER LOADING PLACEHOLDER ----------------
+    class SkeletonShimmerView(context: Context) : View(context) {
+        private var phase = 0f
+        private val anim = ValueAnimator.ofFloat(-0.4f, 1.4f).apply {
+            duration = 1250L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+        }
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val r = 24f
+            val cx = phase * w
+            val span = w * 0.48f
+            paint.shader = LinearGradient(
+                cx - span, 0f, cx + span, h * 0.55f,
+                intArrayOf(Color.parseColor("#F1F5F9"), Color.parseColor("#E2E8F0"), Color.parseColor("#F1F5F9")),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(RectF(0f, 0f, w, h), r, r, paint)
         }
     }
 
@@ -1217,14 +1426,27 @@ object StudioIcons {
         }
     }
 
-    // ---------------- BESPOKE FLAGSHIP AR PROJECTION ARTWORK FOR HERO ----------------
+    // ---------------- LIVE ANIMATED BESPOKE AR PROJECTION ARTWORK FOR HERO ----------------
     class HeroProjectionArtView(context: Context) : View(context) {
+        private var phase = 0f
+        private val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 4200L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+        }
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
         }
+        private val drawPath = Path()
+        private val partialPath = Path()
+        private val tipPos = FloatArray(2)
+
+        override fun onAttachedToWindow() { super.onAttachedToWindow(); anim.start() }
+        override fun onDetachedFromWindow() { anim.cancel(); super.onDetachedFromWindow() }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -1232,67 +1454,89 @@ object StudioIcons {
             val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
             val s = minOf(w, h)
+            val floatY = Math.sin(phase * Math.PI * 2.0).toFloat() * s * 0.025f
             val cx = w * 0.54f
-            val cy = h * 0.5f
+            val cy = h * 0.5f + floatY
 
             // Ambient cyan/magenta aura
             fillPaint.shader = RadialGradient(
                 cx, cy, s * 0.52f,
-                Color.parseColor("#4438BDF8"), Color.TRANSPARENT, Shader.TileMode.CLAMP
+                Color.parseColor("#4C38BDF8"), Color.TRANSPARENT, Shader.TileMode.CLAMP
             )
             canvas.drawCircle(cx, cy, s * 0.52f, fillPaint)
             fillPaint.shader = null
 
             // Tilted translucent paper plane
             canvas.save()
-            canvas.rotate(-10f, cx, cy)
+            canvas.rotate(-10f + Math.sin(phase * Math.PI * 2.0).toFloat() * 1.5f, cx, cy)
             val sheet = RectF(cx - s * 0.30f, cy - s * 0.36f, cx + s * 0.30f, cy + s * 0.36f)
             fillPaint.shader = LinearGradient(
                 sheet.left, sheet.top, sheet.right, sheet.bottom,
-                Color.parseColor("#2AFFFFFF"), Color.parseColor("#10FFFFFF"), Shader.TileMode.CLAMP
+                Color.parseColor("#30FFFFFF"), Color.parseColor("#12FFFFFF"), Shader.TileMode.CLAMP
             )
             canvas.drawRoundRect(sheet, s * 0.08f, s * 0.08f, fillPaint)
             fillPaint.shader = null
-            strokePaint.color = Color.parseColor("#66FFFFFF")
+            strokePaint.color = Color.parseColor("#75FFFFFF")
             strokePaint.strokeWidth = s * 0.022f
             canvas.drawRoundRect(sheet, s * 0.08f, s * 0.08f, strokePaint)
 
             // Precision drawing grid lines inside paper
-            strokePaint.color = Color.parseColor("#28FFFFFF")
+            strokePaint.color = Color.parseColor("#2AFFFFFF")
             strokePaint.strokeWidth = s * 0.012f
             canvas.drawLine(sheet.left + sheet.width() * 0.33f, sheet.top, sheet.left + sheet.width() * 0.33f, sheet.bottom, strokePaint)
             canvas.drawLine(sheet.left + sheet.width() * 0.66f, sheet.top, sheet.left + sheet.width() * 0.66f, sheet.bottom, strokePaint)
             canvas.drawLine(sheet.left, sheet.top + sheet.height() * 0.5f, sheet.right, sheet.top + sheet.height() * 0.5f, strokePaint)
 
-            // Artistic flowing vector bezier stroke on the sheet
-            val artStroke = Path().apply {
-                moveTo(sheet.left + sheet.width() * 0.18f, sheet.bottom - sheet.height() * 0.22f)
-                cubicTo(
-                    sheet.left + sheet.width() * 0.24f, sheet.top + sheet.height() * 0.22f,
-                    sheet.right - sheet.width() * 0.25f, sheet.top + sheet.height() * 0.20f,
-                    sheet.right - sheet.width() * 0.16f, sheet.bottom - sheet.height() * 0.30f
-                )
-                quadTo(
-                    sheet.centerX(), sheet.bottom - sheet.height() * 0.12f,
-                    sheet.left + sheet.width() * 0.36f, sheet.centerY()
-                )
+            // Artistic flowing vector bezier stroke smoothly drawing itself in real time
+            drawPath.reset()
+            drawPath.moveTo(sheet.left + sheet.width() * 0.18f, sheet.bottom - sheet.height() * 0.22f)
+            drawPath.cubicTo(
+                sheet.left + sheet.width() * 0.24f, sheet.top + sheet.height() * 0.22f,
+                sheet.right - sheet.width() * 0.25f, sheet.top + sheet.height() * 0.20f,
+                sheet.right - sheet.width() * 0.16f, sheet.bottom - sheet.height() * 0.30f
+            )
+            drawPath.quadTo(
+                sheet.centerX(), sheet.bottom - sheet.height() * 0.12f,
+                sheet.left + sheet.width() * 0.36f, sheet.centerY()
+            )
+            val pm = PathMeasure(drawPath, false)
+            val progress = when {
+                phase < 0.72f -> (phase / 0.72f)
+                phase < 0.90f -> 1f
+                else -> (1f - (phase - 0.90f) / 0.10f).coerceIn(0f, 1f)
             }
+            partialPath.reset()
+            pm.getSegment(0f, pm.length * progress, partialPath, true)
+            pm.getPosTan(pm.length * progress, tipPos, null)
+
+            // Faint ghost guide stroke + live glowing gold ink stroke
+            strokePaint.color = Color.parseColor("#33FDE047")
+            strokePaint.strokeWidth = s * 0.022f
+            canvas.drawPath(drawPath, strokePaint)
+
             strokePaint.color = Color.parseColor("#FDE047")
             strokePaint.strokeWidth = s * 0.032f
-            canvas.drawPath(artStroke, strokePaint)
+            canvas.drawPath(partialPath, strokePaint)
 
-            // AR tracking anchor nodes on paper corners
+            // Luminous pen-tip spark riding the live stroke
+            if (progress > 0.02f) {
+                fillPaint.color = Color.WHITE
+                canvas.drawCircle(tipPos[0], tipPos[1], s * 0.028f, fillPaint)
+            }
+
+            // Softly pulsing emerald AR tracking anchor nodes on paper corners
+            val dotPulse = (1f + Math.sin(phase * Math.PI * 4.0).toFloat() * 0.22f)
             fillPaint.color = Color.parseColor("#34D399")
-            canvas.drawCircle(sheet.left + s * 0.05f, sheet.top + s * 0.05f, s * 0.026f, fillPaint)
-            canvas.drawCircle(sheet.right - s * 0.05f, sheet.top + s * 0.05f, s * 0.026f, fillPaint)
-            canvas.drawCircle(sheet.left + s * 0.05f, sheet.bottom - s * 0.05f, s * 0.026f, fillPaint)
-            canvas.drawCircle(sheet.right - s * 0.05f, sheet.bottom - s * 0.05f, s * 0.026f, fillPaint)
+            canvas.drawCircle(sheet.left + s * 0.05f, sheet.top + s * 0.05f, s * 0.024f * dotPulse, fillPaint)
+            canvas.drawCircle(sheet.right - s * 0.05f, sheet.top + s * 0.05f, s * 0.024f * dotPulse, fillPaint)
+            canvas.drawCircle(sheet.left + s * 0.05f, sheet.bottom - s * 0.05f, s * 0.024f * dotPulse, fillPaint)
+            canvas.drawCircle(sheet.right - s * 0.05f, sheet.bottom - s * 0.05f, s * 0.024f * dotPulse, fillPaint)
             canvas.restore()
 
-            // Floating Stylus Nib on lower-right
+            // Gently floating Stylus Nib on lower-right
             canvas.save()
-            canvas.translate(cx + s * 0.18f, cy + s * 0.14f)
-            canvas.rotate(32f)
+            canvas.translate(cx + s * 0.19f, cy + s * 0.13f - floatY * 1.4f)
+            canvas.rotate(32f - floatY * 0.8f)
             val stylus = Path().apply {
                 moveTo(0f, -s * 0.24f)
                 lineTo(s * 0.055f, 0f)

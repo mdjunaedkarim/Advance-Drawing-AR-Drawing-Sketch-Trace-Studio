@@ -100,16 +100,17 @@ object UiTabs {
             setPadding(dp(16), dp(14), dp(16), dp(28))
         }
 
-        // Studio Command Search Bar
+        // Studio Command Search Bar with Dynamic Focus Glow
         val searchBoxWrap = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
-            setPadding(dp(14), dp(6), dp(6), dp(6))
-            elevation = dp(5).toFloat()
+            background = UiTheme.round(act, UiTheme.surface, 22, UiTheme.stroke, 1)
+            setPadding(dp(15), dp(6), dp(6), dp(6))
+            elevation = dp(6).toFloat()
         }
+        val searchIconIv = StudioIcons.imageView(act, StudioIcons.Type.SEARCH, 18, UiTheme.textSub)
         searchBoxWrap.addView(
-            StudioIcons.imageView(act, StudioIcons.Type.SEARCH, 18, UiTheme.textSub),
+            searchIconIv,
             LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(10) }
         )
         val searchInput = EditText(act).apply {
@@ -121,6 +122,17 @@ object UiTabs {
             background = null
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
+            setOnFocusChangeListener { _, hasFocus ->
+                searchBoxWrap.background = UiTheme.round(
+                    act,
+                    UiTheme.surface,
+                    22,
+                    if (hasFocus) UiTheme.accentBright else UiTheme.stroke,
+                    if (hasFocus) 2 else 1
+                )
+                searchBoxWrap.animate().scaleX(if (hasFocus) 1.01f else 1f).scaleY(if (hasFocus) 1.01f else 1f).setDuration(150).start()
+                searchIconIv.setImageDrawable(StudioIcons.icon(act, StudioIcons.Type.SEARCH, 18, if (hasFocus) UiTheme.accentBright else UiTheme.textSub))
+            }
         }
         val goBtn = StudioIcons.iconPill(
             context = act,
@@ -131,8 +143,9 @@ object UiTabs {
             iconSizeDp = 14,
             textSizeSp = 12.5f
         ).apply {
-            background = UiTheme.grad(act, "#0EA5E9", "#2563EB", 14)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = UiTheme.premiumGrad(act, "#0EA5E9", "#2563EB", 16)
+            UiTheme.applyColoredShadow(this, Color.parseColor("#0EA5E9"), 5)
+            setPadding(dp(13), dp(8), dp(13), dp(8))
             UiTheme.bounce(this) {
                 val raw = searchInput.text.toString().trim()
                 val norm = AnimeCatalog.normalizeQuery(raw).trim()
@@ -140,8 +153,8 @@ object UiTabs {
             }
         }
         searchBoxWrap.addView(searchInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        searchBoxWrap.addView(goBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(38)))
-        col.addView(searchBoxWrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        searchBoxWrap.addView(goBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(40)))
+        col.addView(searchBoxWrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
 
         val suggestCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         col.addView(suggestCol, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -455,32 +468,36 @@ object UiTabs {
             label = L.t("drawing_create"),
             hex1 = "#EC4899",
             hex2 = "#DB2777",
-            rDp = 16,
+            rDp = 18,
             trailingIcon = StudioIcons.Type.ARROW_RIGHT,
             iconSizeDp = 18,
-            textSizeSp = 15f,
+            textSizeSp = 15.5f,
             onClick = onCreateClick
         )
-        heroCard.addView(createHeroBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { bottomMargin = dp(12) })
+        val shimmerCreateBtn = UiTheme.wrapShimmerCta(act, createHeroBtn, 18).apply {
+            UiTheme.applyColoredShadow(this, Color.parseColor("#EC4899"), 10)
+        }
+        heroCard.addView(shimmerCreateBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(54)).apply { bottomMargin = dp(12) })
 
         val quickTileRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
-        fun heroTile(icon: StudioIcons.Type, label: String, onTap: () -> Unit): LinearLayout {
+        fun heroTile(icon: StudioIcons.Type, label: String, c1: String, c2: String, onTap: () -> Unit): LinearLayout {
             return LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                background = UiTheme.round(act, Color.parseColor("#1DFFFFFF"), 16, Color.parseColor("#33FFFFFF"))
-                setPadding(dp(8), dp(10), dp(8), dp(10))
+                background = UiTheme.premiumSurface(act, Color.parseColor("#24FFFFFF"), 16, Color.parseColor("#42FFFFFF"))
+                setPadding(dp(6), dp(10), dp(6), dp(10))
                 val well = FrameLayout(act).apply {
-                    background = UiTheme.round(act, Color.parseColor("#2EFFFFFF"), 11)
+                    background = UiTheme.premiumGrad(act, c1, c2, 12, Color.parseColor("#44FFFFFF"))
+                    UiTheme.applyColoredShadow(this, Color.parseColor(c1), 4)
                     addView(
-                        StudioIcons.imageView(act, icon, 18, Color.WHITE),
-                        FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+                        StudioIcons.imageView(act, icon, 17, Color.WHITE),
+                        FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER)
                     )
                 }
                 addView(well, LinearLayout.LayoutParams(dp(34), dp(34)).apply { bottomMargin = dp(6) })
                 addView(TextView(act).apply {
                     text = label
-                    textSize = 11.5f
+                    textSize = 11f
                     UiTheme.applyUiFont(this, bold = true)
                     setTextColor(Color.WHITE)
                     gravity = Gravity.CENTER
@@ -489,10 +506,10 @@ object UiTabs {
                 UiTheme.bounce(this, onTap)
             }
         }
-        quickTileRow.addView(heroTile(StudioIcons.Type.CAMERA, L.t("take_photo"), onCameraClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
-        quickTileRow.addView(heroTile(StudioIcons.Type.PHOTO, L.t("upload_gallery"), onGalleryPickClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
-        quickTileRow.addView(heroTile(StudioIcons.Type.SUN, L.t("screen_trace_short"), onScreenDrawClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
-        quickTileRow.addView(heroTile(StudioIcons.Type.FOLDER, L.t("my_activity"), onMyActivityClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        quickTileRow.addView(heroTile(StudioIcons.Type.CAMERA, L.t("take_photo"), "#8B5CF6", "#6D28D9", onCameraClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777", onGalleryPickClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.SUN, L.t("screen_trace_short"), "#F59E0B", "#D97706", onScreenDrawClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
+        quickTileRow.addView(heroTile(StudioIcons.Type.FOLDER, L.t("my_activity"), "#0EA5E9", "#2563EB", onMyActivityClick), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         heroCard.addView(quickTileRow)
 
         heroFrame.addView(heroCard, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -573,12 +590,13 @@ object UiTabs {
                 textSizeSp = 13f
             ).apply {
                 background = if (active) {
-                    UiTheme.grad(act, "#7C3AED", "#4F46E5", 16)
+                    UiTheme.premiumGrad(act, "#7C3AED", "#4F46E5", 16)
                 } else {
-                    UiTheme.round(act, UiTheme.surface, 16, UiTheme.stroke)
+                    UiTheme.premiumSurface(act, UiTheme.surface, 16, UiTheme.stroke)
                 }
-                setPadding(dp(13), dp(9), dp(14), dp(9))
-                elevation = if (active) dp(4).toFloat() else dp(1).toFloat()
+                setPadding(dp(14), dp(9), dp(15), dp(9))
+                if (active) UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 6)
+                else elevation = dp(2).toFloat()
                 UiTheme.bounce(this) {
                     selectedCat = cat
                     if (cat != Samples.Cat.ALL && cat != Samples.Cat.ANIME) {
@@ -672,13 +690,14 @@ object UiTabs {
         ): LinearLayout {
             return LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL
-                background = UiTheme.round(act, UiTheme.surface, 20, UiTheme.stroke)
+                background = UiTheme.premiumSurface(act, UiTheme.surface, 22, UiTheme.stroke, 1)
                 setPadding(dp(8), dp(8), dp(8), dp(10))
-                elevation = dp(4).toFloat()
+                elevation = dp(5).toFloat()
 
                 val imgBox = FrameLayout(act).apply {
-                    background = UiTheme.round(act, Color.WHITE, 14, UiTheme.stroke)
+                    background = UiTheme.round(act, Color.WHITE, 16, UiTheme.stroke)
                     setPadding(dp(6), dp(6), dp(6), dp(6))
+                    clipRounded(this, dp(16).toFloat())
                     val iv = ImageView(act).apply {
                         scaleType = ImageView.ScaleType.FIT_CENTER
                     }
@@ -688,15 +707,17 @@ object UiTabs {
                     if (cachedPreview != null) {
                         iv.setImageBitmap(cachedPreview)
                     } else {
-                        val spinner = ProgressBar(act).apply { isIndeterminate = true }
-                        addView(spinner, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                        val skeleton = StudioIcons.SkeletonShimmerView(act)
+                        addView(skeleton, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
                         SketchSearchRepository.loadTopicPreviewBitmap(act, item) { bmp ->
-                            spinner.visibility = View.GONE
+                            skeleton.visibility = View.GONE
                             if (bmp != null) {
                                 iv.alpha = 0f
+                                iv.scaleX = 0.94f
+                                iv.scaleY = 0.94f
                                 iv.setImageBitmap(bmp)
-                                iv.animate().alpha(1f).setDuration(140).start()
+                                iv.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start()
                             }
                         }
                     }
@@ -708,12 +729,12 @@ object UiTabs {
                         maxLines = 1
                         if (tagGradHex != null) {
                             setTextColor(Color.WHITE)
-                            background = UiTheme.grad(act, tagGradHex.first, tagGradHex.second, 8)
+                            background = UiTheme.premiumGrad(act, tagGradHex.first, tagGradHex.second, 9)
                         } else {
                             setTextColor(UiTheme.accent)
-                            background = UiTheme.round(act, UiTheme.accentSoft, 8)
+                            background = UiTheme.round(act, UiTheme.accentSoft, 9)
                         }
-                        setPadding(dp(7), dp(2), dp(7), dp(2))
+                        setPadding(dp(8), dp(3), dp(8), dp(3))
                     }
                     addView(tagTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START))
 
@@ -724,8 +745,8 @@ object UiTabs {
                             textSize = 10f
                             UiTheme.applyDisplayFont(this, bold = true)
                             setTextColor(Color.WHITE)
-                            background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 8)
-                            setPadding(dp(7), dp(2), dp(7), dp(2))
+                            background = UiTheme.premiumGrad(act, "#7C3AED", "#4F46E5", 9)
+                            setPadding(dp(8), dp(3), dp(8), dp(3))
                         }, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
                     }
                 }
@@ -734,7 +755,7 @@ object UiTabs {
                 val footRow = LinearLayout(act).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(2), dp(8), dp(2), 0)
+                    setPadding(dp(3), dp(9), dp(3), 0)
                 }
                 footRow.addView(TextView(act).apply {
                     text = item.title
@@ -755,8 +776,9 @@ object UiTabs {
                         iconSizeDp = 11,
                         textSizeSp = 10.5f
                     ).apply {
-                        background = UiTheme.grad(act, "#7C3AED", "#4F46E5", 10)
-                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                        background = UiTheme.premiumGrad(act, "#7C3AED", "#4F46E5", 11)
+                        UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 3)
+                        setPadding(dp(9), dp(5), dp(9), dp(5))
                     }
                 )
                 addView(footRow)
