@@ -231,8 +231,23 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(24), safeTop(), dp(24), dp(42))
         }
-        val logoAnim = StudioIcons.BrandSplashView(this)
-        centerCol.addView(logoAnim, LinearLayout.LayoutParams(dp(196), dp(196)))
+        val logoCard = FrameLayout(this).apply {
+            background = UiTheme.round(this@MainActivity, Color.WHITE, 34, UiTheme.stroke, 2)
+            elevation = dp(12).toFloat()
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(34).toFloat()) }
+            }
+            clipToOutline = true
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.app_logo)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    contentDescription = L.t("app")
+                },
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+        }
+        centerCol.addView(logoCard, LinearLayout.LayoutParams(dp(168), dp(168)).apply { bottomMargin = dp(8) })
         centerCol.addView(TextView(this).apply {
             text = L.t("app")
             textSize = 25f
@@ -355,13 +370,24 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(16), safeTop() + dp(10), dp(16), dp(12))
             elevation = dp(4).toFloat()
         }
+        val topLogoBox = FrameLayout(this).apply {
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(9).toFloat()) }
+            }
+            clipToOutline = true
+            elevation = dp(2).toFloat()
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.app_logo)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    contentDescription = L.t("app")
+                },
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+        }
         topBar.addView(
-            ImageView(this).apply {
-                setImageDrawable(StudioIcons.brandLogoDrawable(this@MainActivity, 32))
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                contentDescription = L.t("app")
-            },
-            LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(10) }
+            topLogoBox,
+            LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
         )
         topBar.addView(TextView(this).apply {
             text = when (currentTab) {
