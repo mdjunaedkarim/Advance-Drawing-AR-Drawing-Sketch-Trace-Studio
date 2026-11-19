@@ -165,10 +165,8 @@ object UiTheme {
 
     fun applyColoredShadow(v: View, shadowColor: Int, elevationDp: Int) {
         v.elevation = dp(v.context, elevationDp).toFloat()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            v.outlineAmbientShadowColor = shadowColor
-            v.outlineSpotShadowColor = shadowColor
-        }
+        v.outlineAmbientShadowColor = shadowColor
+        v.outlineSpotShadowColor = shadowColor
     }
 
     fun styleGradientBtn(
@@ -343,8 +341,11 @@ object UiTheme {
             splitTrack = false
             thumbOffset = dp(act, 2)
             setPadding(dp(act, 10), dp(act, 8), dp(act, 10), dp(act, 8))
-            minHeight = dp(act, 30)
-            maxHeight = dp(act, 30)
+            minimumHeight = dp(act, 30)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                minHeight = dp(act, 30)
+                maxHeight = dp(act, 30)
+            }
         }
         return sb
     }

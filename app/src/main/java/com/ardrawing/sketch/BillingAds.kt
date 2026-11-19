@@ -383,5 +383,11 @@ class BillingAdsManager(
         }
     }
 
-    fun destroy() { billingClient?.endConnection() }
+    fun destroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        pendingStartupCallback = null
+        try { cachedBannerView?.destroy() } catch (_: Throwable) {}
+        cachedBannerView = null
+        billingClient?.endConnection()
+    }
 }

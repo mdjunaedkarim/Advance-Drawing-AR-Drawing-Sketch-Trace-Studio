@@ -134,6 +134,17 @@ object UiTabs {
                 searchIconIv.setImageDrawable(StudioIcons.icon(act, StudioIcons.Type.SEARCH, 18, if (hasFocus) UiTheme.accentBright else UiTheme.textSub))
             }
         }
+        fun submitHomeSearch() {
+            val raw = searchInput.text.toString().trim()
+            val norm = AnimeCatalog.normalizeQuery(raw).trim()
+            onBrowseOnline(if (norm.isEmpty()) "Anime black and white sketch drawing" else "$norm black and white sketch drawing")
+        }
+        searchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                submitHomeSearch()
+                true
+            } else false
+        }
         val goBtn = StudioIcons.iconPill(
             context = act,
             iconType = StudioIcons.Type.GLOBE,
@@ -146,11 +157,7 @@ object UiTabs {
             background = UiTheme.premiumGrad(act, "#0EA5E9", "#2563EB", 16)
             UiTheme.applyColoredShadow(this, Color.parseColor("#0EA5E9"), 5)
             setPadding(dp(13), dp(8), dp(13), dp(8))
-            UiTheme.bounce(this) {
-                val raw = searchInput.text.toString().trim()
-                val norm = AnimeCatalog.normalizeQuery(raw).trim()
-                onBrowseOnline(if (norm.isEmpty()) "Anime black and white sketch drawing" else "$norm black and white sketch drawing")
-            }
+            UiTheme.bounce(this) { submitHomeSearch() }
         }
         searchBoxWrap.addView(searchInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         searchBoxWrap.addView(goBtn, LinearLayout.LayoutParams(WRAP_CONTENT, dp(40)))
@@ -1004,6 +1011,22 @@ object UiTabs {
         val files = (galleryDir.listFiles()?.toList() ?: emptyList())
             .filter { it.name.endsWith(".png") }
             .sortedByDescending { it.lastModified() }
+        val existingNames = files.mapTo(HashSet()) { it.name }
+        selectedFiles.retainAll(existingNames)
+
+        fun decodeThumbSafe(f: File, reqPx: Int): Bitmap? {
+            return try {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(f.absolutePath, bounds)
+                var sample = 1
+                val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+                while (maxDim / (sample * 2) >= reqPx) sample *= 2
+                BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                })
+            } catch (_: Throwable) { null }
+        }
 
         val topBtns = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
         val impBtn = UiTheme.studioGradientAction(
@@ -1076,12 +1099,12 @@ object UiTabs {
                 row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
                 col.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
             }
-            val bmp = BitmapFactory.decodeFile(file.absolutePath)
+            val bmp = decodeThumbSafe(file, cardSize.coerceAtLeast(240))
             val savedName = prefs.getString("gname_${file.name}", "${L.t("art_prefix")} #${files.size - idx}") ?: L.t("art_prefix")
             val isSel = selectedFiles.contains(file.name)
             val card = LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL
-                background = UiTheme.round(act, UiTheme.surface, 20, if (isSel) UiTheme.accentBright else UiTheme.stroke, if (isSel) 2 else 1)
+                background = UiTheme.premiumSurface(act, UiTheme.surface, 20, if (isSel) UiTheme.accentBright else UiTheme.stroke, if (isSel) 2 else 1)
                 setPadding(dp(8), dp(8), dp(8), dp(10))
                 elevation = dp(4).toFloat()
 
@@ -1093,7 +1116,10 @@ object UiTabs {
                     setPadding(dp(4), dp(4), dp(4), dp(4))
                     clipRounded(this, dp(14).toFloat())
                 }
-                UiTheme.bounce(iv) { if (bmp != null) onDraw(bmp) }
+                UiTheme.bounce(iv) {
+                    val full = try { BitmapFactory.decodeFile(file.absolutePath) } catch (_: Throwable) { null } ?: bmp
+                    if (full != null) onDraw(full)
+                }
                 imgWrap.addView(iv, FrameLayout.LayoutParams(MATCH_PARENT, cardSize - dp(16)))
                 val selBadge = FrameLayout(act).apply {
                     background = UiTheme.round(act, if (isSel) UiTheme.accentBright else Color.parseColor("#88000000"), 15, Color.WHITE)
@@ -1374,7 +1400,8 @@ object UiTabs {
                             UiTheme.applyDisplayFont(this, bold = true)
                             setTextColor(Color.WHITE)
                             gravity = Gravity.CENTER
-                            background = UiTheme.grad(act, "#10B981", "#059669", 14)
+                            background = UiTheme.premiumGrad(act, "#10B981", "#059669", 14)
+                            UiTheme.applyColoredShadow(this, Color.parseColor("#10B981"), 5)
                             UiTheme.bounce(this) { billingAds.purchase(act, pack) }
                         }
                         addView(buyBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(42)))

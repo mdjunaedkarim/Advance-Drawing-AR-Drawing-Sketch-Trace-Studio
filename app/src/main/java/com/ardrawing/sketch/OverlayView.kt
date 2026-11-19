@@ -45,8 +45,10 @@ class OverlayView @JvmOverloads constructor(
         private set
     var gridEnabled = false
         private set
+    private var guidesVisible = true
     private var trackingGood = true
     private var initializedPlacement = false
+    private val matrixVals = FloatArray(9)
 
     private enum class Mode { NONE, DRAG, ZOOM_ROTATE }
     private var mode = Mode.NONE
@@ -96,6 +98,11 @@ class OverlayView @JvmOverloads constructor(
 
     fun setGridEnabled(enabled: Boolean) {
         gridEnabled = enabled
+        invalidate()
+    }
+
+    fun setGuidesVisible(visible: Boolean) {
+        guidesVisible = visible
         invalidate()
     }
 
@@ -188,9 +195,15 @@ class OverlayView @JvmOverloads constructor(
         canvas.drawBitmap(bmp, m, paint)
 
         // Optional Rule-of-Thirds Pro Proportion Grid or Corner Reticles while Placing
-        if (gridEnabled || !isLocked) {
+        if (gridEnabled || (!isLocked && guidesVisible)) {
             val bw = bmp.width.toFloat()
             val bh = bmp.height.toFloat()
+            m.getValues(matrixVals)
+            val curScale = hypot(matrixVals[Matrix.MSCALE_X], matrixVals[Matrix.MSKEW_Y]).coerceAtLeast(0.05f)
+            val density = resources.displayMetrics.density
+            gridPaint.strokeWidth = (1.1f * density) / curScale
+            guideBorderPaint.strokeWidth = (2.2f * density) / curScale
+
             canvas.save()
             canvas.concat(m)
             if (gridEnabled) {
@@ -200,7 +213,7 @@ class OverlayView @JvmOverloads constructor(
                 canvas.drawLine(0f, bh / 3f, bw, bh / 3f, gridPaint)
                 canvas.drawLine(0f, bh * 2f / 3f, bw, bh * 2f / 3f, gridPaint)
             }
-            if (!isLocked) {
+            if (!isLocked && guidesVisible) {
                 val c = minOf(bw, bh) * 0.08f
                 canvas.drawLine(0f, c, 0f, 0f, guideBorderPaint)
                 canvas.drawLine(0f, 0f, c, 0f, guideBorderPaint)
@@ -213,6 +226,11 @@ class OverlayView @JvmOverloads constructor(
             }
             canvas.restore()
         }
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -253,8 +271,12 @@ class OverlayView @JvmOverloads constructor(
 
                     userMatrix.postTranslate(midX - prevMidX, midY - prevMidY)
                     if (prevDist > 12f && dist > 12f) {
-                        val s = (dist / prevDist).coerceIn(0.5f, 2.0f)
-                        userMatrix.postScale(s, s, midX, midY)
+                        userMatrix.getValues(matrixVals)
+                        val curScale = hypot(matrixVals[Matrix.MSCALE_X], matrixVals[Matrix.MSKEW_Y]).coerceAtLeast(0.01f)
+                        val rawS = (dist / prevDist).coerceIn(0.5f, 2.0f)
+                        val nextScale = (curScale * rawS).coerceIn(0.15f, 8.0f)
+                        val clampedS = nextScale / curScale
+                        userMatrix.postScale(clampedS, clampedS, midX, midY)
                     }
                     val dDeg = Math.toDegrees((ang - prevAngle).toDouble()).toFloat()
                     userMatrix.postRotate(dDeg, midX, midY)

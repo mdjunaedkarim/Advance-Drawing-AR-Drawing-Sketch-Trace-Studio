@@ -35,7 +35,10 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -132,6 +135,9 @@ class MainActivity : ComponentActivity() {
     private var insetTop = 0
     private var insetBottom = 0
     private var applyInsetsCallback: (() -> Unit)? = null
+    private var activePopupDismiss: (() -> Unit)? = null
+    @Volatile
+    private var isDownloadingOnlineImage = false
 
     private fun safeTop(): Int = maxOf(insetTop, dp(16))
     private fun safeBottom(): Int = maxOf(insetBottom, dp(10))
@@ -188,6 +194,10 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                activePopupDismiss?.let {
+                    it.invoke()
+                    return
+                }
                 when (flow) {
                     Flow.SPLASH -> {}
                     Flow.CAMERA -> { stopCamera(); showFlow(Flow.EDITOR) }
@@ -316,13 +326,17 @@ class MainActivity : ComponentActivity() {
         var p = 1
         handler.postDelayed(object : Runnable {
             override fun run() {
+                if (isFinishing || isDestroyed || flow != Flow.SPLASH) return
                 p = (p + 4).coerceAtMost(100)
                 bar.progress = p
                 pctTv.text = "${L.t("loading")}... $p%"
                 if (p < 100) handler.postDelayed(this, 45)
                 else handler.postDelayed({
+                    if (isFinishing || isDestroyed || flow != Flow.SPLASH) return@postDelayed
                     billingAds.showStartupAd(this@MainActivity) {
-                        runOnUiThread { showFlow(Flow.MAIN) }
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) showFlow(Flow.MAIN)
+                        }
                     }
                 }, 140)
             }
@@ -1138,6 +1152,25 @@ class MainActivity : ComponentActivity() {
         topBar.addView(barInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
 
         val wv = WebView(this)
+        fun submitBrowserSearch() {
+            val q = barInput.text.toString().trim()
+            if (q.isNotEmpty()) {
+                browserQuery = q
+                wv.loadUrl(buildBingImagesUrl(q))
+                try {
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.hideSoftInputFromWindow(barInput.windowToken, 0)
+                } catch (_: Throwable) {}
+                barInput.clearFocus()
+            }
+        }
+        barInput.imeOptions = EditorInfo.IME_ACTION_SEARCH
+        barInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                submitBrowserSearch()
+                true
+            } else false
+        }
         topBar.addView(
             UiTheme.studioIconBtn(
                 act = this,
@@ -1149,13 +1182,7 @@ class MainActivity : ComponentActivity() {
                 strokeColor = null,
                 iconTint = Color.WHITE,
                 contentDesc = L.t("search_btn")
-            ) {
-                val q = barInput.text.toString().trim()
-                if (q.isNotEmpty()) {
-                    browserQuery = q
-                    wv.loadUrl(buildBingImagesUrl(q))
-                }
-            },
+            ) { submitBrowserSearch() },
             LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(6) }
         )
         topBar.addView(
@@ -1188,6 +1215,12 @@ class MainActivity : ComponentActivity() {
             setPadding(0, dp(6), 0, dp(6))
         })
 
+        val webProgress = StudioIcons.StudioProgressView(this).apply {
+            progress = 15
+            visibility = View.VISIBLE
+        }
+        col.addView(webProgress, LinearLayout.LayoutParams(MATCH_PARENT, dp(3)))
+
         wv.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -1201,9 +1234,17 @@ class MainActivity : ComponentActivity() {
                 }
             }, "AndroidBridge")
 
+            webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    webProgress.progress = newProgress
+                    webProgress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                }
+            }
+
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    webProgress.visibility = View.GONE
                     val js = """
                         (function() {
                             if (window.__bingArtHook) return;
@@ -1249,41 +1290,78 @@ class MainActivity : ComponentActivity() {
         ViewCompat.requestApplyInsets(root)
     }
 
+    private fun decodeBytesBounded(bytes: ByteArray, maxDimPx: Int = 1440): Bitmap? {
+        if (bytes.isEmpty()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+        while (maxDim / (sample * 2) >= maxDimPx) sample *= 2
+        val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }) ?: return null
+        val curMax = maxOf(raw.width, raw.height)
+        return if (curMax > maxDimPx) {
+            val s = maxDimPx.toFloat() / curMax
+            Bitmap.createScaledBitmap(raw, (raw.width * s).toInt().coerceAtLeast(1), (raw.height * s).toInt().coerceAtLeast(1), true)
+        } else raw
+    }
+
     private fun decodeRemoteImage(src: String): Bitmap? {
         if (src.isEmpty()) return null
         return try {
             if (src.startsWith("data:image")) {
                 val bytes = Base64.decode(src.substringAfter("base64,", ""), Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                decodeBytesBounded(bytes)
             } else if (src.startsWith("http")) {
                 val conn = URL(src).openConnection() as HttpURLConnection
                 conn.connectTimeout = 6000; conn.readTimeout = 8000
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                decodeBytesBounded(bytes)
             } else null
-        } catch (_: Exception) { null }
+        } catch (_: Throwable) { null }
     }
 
     private fun saveOnlineImageAndDraw(fullUrl: String, thumbUrl: String) {
+        if (isDownloadingOnlineImage) return
+        isDownloadingOnlineImage = true
         runOnUiThread { Toast.makeText(this, L.t("saving_image"), Toast.LENGTH_SHORT).show() }
         ioExecutor.execute {
-            val bmp = decodeRemoteImage(fullUrl) ?: decodeRemoteImage(thumbUrl)
-            if (bmp != null) {
-                val argb = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
-                val clean = if (ImageProcessor.isLikelyBwDrawing(argb)) {
-                    ImageProcessor.toCleanBwSketch(argb)
+            try {
+                val bmp = decodeRemoteImage(fullUrl) ?: decodeRemoteImage(thumbUrl)
+                if (bmp != null) {
+                    val argb = if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
+                    val clean = if (ImageProcessor.isLikelyBwDrawing(argb)) {
+                        ImageProcessor.toCleanBwSketch(argb)
+                    } else {
+                        argb
+                    }
+                    saveToGallery(clean, "Bing")
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && flow == Flow.BROWSER) {
+                            destroyWebView()
+                            openEditorWithBitmap(clean)
+                        }
+                    }
                 } else {
-                    argb
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) Toast.makeText(this, L.t("import_fail"), Toast.LENGTH_SHORT).show()
+                    }
                 }
-                saveToGallery(clean, "Bing")
-                runOnUiThread { destroyWebView(); openEditorWithBitmap(clean) }
-            } else {
-                runOnUiThread { Toast.makeText(this, L.t("import_fail"), Toast.LENGTH_SHORT).show() }
+            } finally {
+                isDownloadingOnlineImage = false
             }
         }
     }
 
-    private fun destroyWebView() { activeWebView?.destroy(); activeWebView = null }
+    private fun destroyWebView() {
+        isDownloadingOnlineImage = false
+        activeWebView?.destroy()
+        activeWebView = null
+    }
 
     private fun showCuteSourcePopup() {
         val backdrop = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#99040712")) }
@@ -1293,12 +1371,17 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(20), dp(22), dp(20), dp(20))
             elevation = dp(18).toFloat()
         }
+        var dismissed = false
         fun dismiss(after: (() -> Unit)? = null) {
+            if (dismissed) return
+            dismissed = true
+            activePopupDismiss = null
             UiTheme.animateModalOut(backdrop, card) {
                 root.removeView(backdrop)
                 after?.invoke()
             }
         }
+        activePopupDismiss = { dismiss() }
         card.addView(TextView(this).apply {
             text = L.t("choose_source")
             textSize = 19f
@@ -1360,12 +1443,17 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(20), dp(22), dp(20), dp(20))
             elevation = dp(18).toFloat()
         }
+        var dismissed = false
         fun dismiss(after: (() -> Unit)? = null) {
+            if (dismissed) return
+            dismissed = true
+            activePopupDismiss = null
             UiTheme.animateModalOut(backdrop, card) {
                 root.removeView(backdrop)
                 after?.invoke()
             }
         }
+        activePopupDismiss = { dismiss() }
         card.addView(TextView(this).apply {
             text = L.t("import_title")
             textSize = 19f
@@ -1918,7 +2006,10 @@ class MainActivity : ComponentActivity() {
 
         fun applyProcessed(newBmp: Bitmap) {
             val prev = activeEditBitmap()
-            if (prev != null && bgRemoved) editHistory.add(prev)
+            if (prev != null && bgRemoved) {
+                editHistory.add(prev)
+                if (editHistory.size > 8) editHistory.removeAt(0)
+            }
             cutoutBitmap = newBmp
             bgRemoved = true
             isProcessingBg = false
@@ -2410,6 +2501,7 @@ class MainActivity : ComponentActivity() {
             controlsHidden = !show
             val vis = if (show) View.VISIBLE else View.GONE
             topPill.visibility = vis; bottomCard.visibility = vis; hintPill.visibility = vis
+            overlay.setGuidesVisible(show)
             hideTv.text = if (show) L.t("hide_btn") else L.t("show_btn")
             hideBtn.animate().alpha(if (show) 1f else 0.58f).setDuration(180).start()
         }
@@ -2701,6 +2793,7 @@ class MainActivity : ComponentActivity() {
             hintPill.visibility = vis
             bottomCard.visibility = vis
             lockBtn.visibility = vis
+            overlay.setGuidesVisible(show)
             hideTv.text = if (show) L.t("hide_btn") else L.t("show_btn")
             hideBtn.animate()
                 .translationX(if (show) 0f else dp(56).toFloat())
@@ -2941,10 +3034,15 @@ class MainActivity : ComponentActivity() {
     private fun saveToGallery(bmp: Bitmap?, prefix: String) {
         if (bmp == null) return
         try {
-            val s = 512f / maxOf(bmp.width, bmp.height).coerceAtLeast(1)
-            val thumb = Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt().coerceAtLeast(1), (bmp.height * s).toInt().coerceAtLeast(1), true)
+            val maxDim = maxOf(bmp.width, bmp.height).coerceAtLeast(1)
+            val outBmp = if (maxDim > 1080) {
+                val s = 1080f / maxDim
+                Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt().coerceAtLeast(1), (bmp.height * s).toInt().coerceAtLeast(1), true)
+            } else {
+                bmp
+            }
             val name = "art_${System.currentTimeMillis()}.png"
-            FileOutputStream(File(galleryDir, name)).use { thumb.compress(Bitmap.CompressFormat.PNG, 92, it) }
+            FileOutputStream(File(galleryDir, name)).use { outBmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
             prefs.edit().putString("gname_$name", "$prefix #${galleryDir.listFiles()?.size ?: 1}").apply()
         } catch (_: Exception) {}
     }
@@ -2958,7 +3056,10 @@ class MainActivity : ComponentActivity() {
     private fun dp(v: Int): Int = UiTheme.dp(this, v)
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        activePopupDismiss = null
         super.onDestroy(); stopCamera(); destroyWebView(); billingAds.destroy()
         if (::analysisExecutor.isInitialized) analysisExecutor.shutdown()
+        ioExecutor.shutdown()
     }
 }
