@@ -104,7 +104,9 @@ object L {
         "lightbox_hint" to "Adjust sketch, then tap Lock before placing paper",
         "lightbox_locked" to "Screen Locked • Only Unlock button works",
         "brightness_overdrive" to "2× BOOST",
-        "bing_pill" to "Bing"
+        "bing_pill" to "Bing",
+        "hide_btn" to "Hide",
+        "show_btn" to "Show"
     )
 
     private val extraBn = mapOf(
@@ -135,7 +137,9 @@ object L {
         "lightbox_hint" to "ছবি ঠিক করে কাগজ রাখার আগে লক বাটনে ক্লিক করুন",
         "lightbox_locked" to "স্ক্রিন লক • লক বাটন ছাড়া কোথাও টাচ কাজ করবে না",
         "brightness_overdrive" to "২× ডাবল আলো",
-        "bing_pill" to "Bing"
+        "bing_pill" to "Bing",
+        "hide_btn" to "হাইড",
+        "show_btn" to "শো"
     )
 
     fun t(key: String): String {

@@ -2272,7 +2272,7 @@ class MainActivity : ComponentActivity() {
             pillIconBtn(StudioIcons.Type.CLOSE, Color.WHITE, desc = L.t("back")) { _, _ ->
                 stopCamera(); showFlow(Flow.EDITOR)
             },
-            LinearLayout.LayoutParams(dp(44), dp(44))
+            LinearLayout.LayoutParams(dp(42), dp(42))
         )
         topPill.addView(
             pillIconBtn(StudioIcons.Type.FLIP_H, Color.WHITE, desc = "Flip") { _, _ ->
@@ -2280,7 +2280,7 @@ class MainActivity : ComponentActivity() {
                 activeBmp = Bitmap.createBitmap(activeBmp, 0, 0, activeBmp.width, activeBmp.height, m, true)
                 overlay.setBitmap(activeBmp, resetPos = false)
             },
-            LinearLayout.LayoutParams(dp(44), dp(44))
+            LinearLayout.LayoutParams(dp(42), dp(42))
         )
         topPill.addView(
             pillIconBtn(StudioIcons.Type.FLASH, Color.WHITE, desc = "Flash") { wrap, iv ->
@@ -2297,7 +2297,7 @@ class MainActivity : ComponentActivity() {
                 )
                 wrap.background = if (torchOn) UiTheme.round(this, Color.parseColor("#33FBBF24"), 14) else null
             },
-            LinearLayout.LayoutParams(dp(44), dp(44))
+            LinearLayout.LayoutParams(dp(42), dp(42))
         )
         topPill.addView(
             pillIconBtn(StudioIcons.Type.LOCK, Color.WHITE, desc = "Lock") { wrap, iv ->
@@ -2319,14 +2319,14 @@ class MainActivity : ComponentActivity() {
                     resetPosPill.alpha = 1f
                 }
             },
-            LinearLayout.LayoutParams(dp(44), dp(44))
+            LinearLayout.LayoutParams(dp(42), dp(42))
         )
         topPill.addView(
             pillIconBtn(StudioIcons.Type.CHECK, Color.parseColor("#34D399"), desc = L.t("save")) { _, _ ->
                 saveToGallery(activeBmp, L.t("art_prefix")); stopCamera()
                 billingAds.showRewardedOnComplete(this@MainActivity) { runOnUiThread { showFlow(Flow.CONGRATS) } }
             },
-            LinearLayout.LayoutParams(dp(44), dp(44))
+            LinearLayout.LayoutParams(dp(42), dp(42))
         )
 
         val opRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -2370,11 +2370,21 @@ class MainActivity : ComponentActivity() {
         }, "#F59E0B", "#FDE047", darkSurface = true))
 
         val hideBtn = FrameLayout(this).apply {
-            background = UiTheme.round(this@MainActivity, glassFill, 24, glassStroke)
+            background = UiTheme.premiumSurface(this@MainActivity, glassFill, 24, glassStroke)
             elevation = dp(8).toFloat()
+            minimumWidth = dp(64)
+            setPadding(dp(14), 0, dp(14), 0)
+            contentDescription = L.t("hide_btn")
         }
-        val hideIv = StudioIcons.imageView(this, StudioIcons.Type.EYE_HIDE, 20, Color.WHITE)
-        hideBtn.addView(hideIv, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        val hideTv = TextView(this).apply {
+            text = L.t("hide_btn")
+            textSize = 13f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            maxLines = 1
+        }
+        hideBtn.addView(hideTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
 
         val hintPill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2400,14 +2410,8 @@ class MainActivity : ComponentActivity() {
             controlsHidden = !show
             val vis = if (show) View.VISIBLE else View.GONE
             topPill.visibility = vis; bottomCard.visibility = vis; hintPill.visibility = vis
-            hideIv.setImageDrawable(
-                StudioIcons.icon(
-                    this,
-                    if (show) StudioIcons.Type.EYE_HIDE else StudioIcons.Type.EXPAND,
-                    20,
-                    Color.WHITE
-                )
-            )
+            hideTv.text = if (show) L.t("hide_btn") else L.t("show_btn")
+            hideBtn.animate().alpha(if (show) 1f else 0.58f).setDuration(180).start()
         }
         UiTheme.bounce(hideBtn) { setControlsVisible(controlsHidden) }
 
@@ -2421,8 +2425,8 @@ class MainActivity : ComponentActivity() {
         previewView.setOnTouchListener { _, ev -> tapDetector.onTouchEvent(ev); true }
 
         val topBar = FrameLayout(this).apply { setPadding(dp(14), safeTop() + dp(8), dp(14), 0) }
-        topBar.addView(topPill, FrameLayout.LayoutParams(WRAP_CONTENT, dp(52), Gravity.START))
-        topBar.addView(hideBtn, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
+        topBar.addView(topPill, FrameLayout.LayoutParams(WRAP_CONTENT, dp(50), Gravity.START))
+        topBar.addView(hideBtn, FrameLayout.LayoutParams(WRAP_CONTENT, dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
 
         val hintLp = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = safeTop() + dp(68)
@@ -2658,6 +2662,27 @@ class MainActivity : ComponentActivity() {
             setOnTouchListener { _, _ -> true }
         }
 
+        // Hide Button (Text-only "Hide" / "Show" — no eye icon; hides all controls so only the sketch shows)
+        var lightboxControlsHidden = false
+        val hideBtn = FrameLayout(this).apply {
+            background = UiTheme.premiumSurface(this@MainActivity, glassFill, 24, glassStroke)
+            elevation = dp(10).toFloat()
+            minimumWidth = dp(62)
+            setPadding(dp(14), 0, dp(14), 0)
+            contentDescription = L.t("hide_btn")
+            isClickable = true
+            isFocusable = true
+        }
+        val hideTv = TextView(this).apply {
+            text = L.t("hide_btn")
+            textSize = 13f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            maxLines = 1
+        }
+        hideBtn.addView(hideTv, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER))
+
         // Button #5: Lock / Unlock positioned ABOVE touchBlocker in Z-order so ONLY it responds while locked
         val lockBtn = FrameLayout(this).apply {
             background = UiTheme.round(this@MainActivity, glassFill, 24, glassStroke)
@@ -2668,6 +2693,38 @@ class MainActivity : ComponentActivity() {
         }
         val lockIv = StudioIcons.imageView(this, StudioIcons.Type.LOCK, 22, Color.WHITE)
         lockBtn.addView(lockIv, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+
+        fun setLightboxControlsVisible(show: Boolean) {
+            lightboxControlsHidden = !show
+            val vis = if (show) View.VISIBLE else View.GONE
+            topPill.visibility = vis
+            hintPill.visibility = vis
+            bottomCard.visibility = vis
+            lockBtn.visibility = vis
+            hideTv.text = if (show) L.t("hide_btn") else L.t("show_btn")
+            hideBtn.animate()
+                .translationX(if (show) 0f else dp(56).toFloat())
+                .alpha(if (show) 1f else 0.52f)
+                .setDuration(190)
+                .start()
+        }
+
+        UiTheme.bounce(hideBtn) {
+            if (isLightboxLocked) return@bounce
+            setLightboxControlsVisible(lightboxControlsHidden)
+        }
+
+        val lightboxTapDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (!isLightboxLocked && lightboxControlsHidden) {
+                    setLightboxControlsVisible(true)
+                    return true
+                }
+                return false
+            }
+        })
+        overlay.setOnTouchListener { _, ev -> lightboxTapDetector.onTouchEvent(ev); false }
+        whiteCanvas.setOnTouchListener { _, ev -> lightboxTapDetector.onTouchEvent(ev); true }
 
         UiTheme.bounce(lockBtn) {
             isLightboxLocked = !isLightboxLocked
@@ -2681,6 +2738,7 @@ class MainActivity : ComponentActivity() {
                 hintDot.background = UiTheme.round(this, Color.parseColor("#10B981"), 5)
                 topPill.animate().alpha(0.18f).setDuration(180).start()
                 bottomCard.animate().alpha(0.16f).setDuration(180).start()
+                hideBtn.animate().alpha(0.16f).setDuration(180).start()
             } else {
                 overlay.unlock()
                 touchBlocker.visibility = View.GONE
@@ -2691,11 +2749,12 @@ class MainActivity : ComponentActivity() {
                 hintDot.background = UiTheme.round(this, Color.parseColor("#FBBF24"), 5)
                 topPill.animate().alpha(1f).setDuration(180).start()
                 bottomCard.animate().alpha(1f).setDuration(180).start()
+                hideBtn.animate().alpha(if (lightboxControlsHidden) 0.52f else 1f).setDuration(180).start()
             }
         }
 
-        val topPillLp = FrameLayout.LayoutParams(WRAP_CONTENT, dp(52), Gravity.TOP or Gravity.START).apply {
-            setMargins(dp(14), safeTop() + dp(8), 0, 0)
+        val topPillLp = FrameLayout.LayoutParams(WRAP_CONTENT, dp(50), Gravity.TOP or Gravity.START).apply {
+            setMargins(dp(12), safeTop() + dp(8), 0, 0)
         }
         val hintLp = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = safeTop() + dp(68)
@@ -2703,7 +2762,10 @@ class MainActivity : ComponentActivity() {
         val bottomLp = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply {
             setMargins(dp(14), 0, dp(14), safeBottom() + dp(10))
         }
-        val lockBtnLp = FrameLayout.LayoutParams(dp(50), dp(50), Gravity.TOP or Gravity.END).apply {
+        val hideBtnLp = FrameLayout.LayoutParams(WRAP_CONTENT, dp(48), Gravity.TOP or Gravity.END).apply {
+            setMargins(0, safeTop() + dp(9), dp(70), 0)
+        }
+        val lockBtnLp = FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
             setMargins(0, safeTop() + dp(9), dp(14), 0)
         }
 
@@ -2712,20 +2774,24 @@ class MainActivity : ComponentActivity() {
         root.addView(topPill, topPillLp)
         root.addView(hintPill, hintLp)
         root.addView(bottomCard, bottomLp)
+        root.addView(hideBtn, hideBtnLp)
         root.addView(touchBlocker, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(lockBtn, lockBtnLp)
         UiTheme.animatePageIn(topPill, -14, 240L)
+        UiTheme.animatePageIn(hideBtn, -14, 240L)
         UiTheme.animatePageIn(lockBtn, -14, 240L)
         UiTheme.animatePageIn(hintPill, -10, 280L)
         UiTheme.animatePageIn(bottomCard, 22, 260L)
 
         applyInsetsCallback = {
-            topPillLp.setMargins(dp(14), safeTop() + dp(8), 0, 0)
+            topPillLp.setMargins(dp(12), safeTop() + dp(8), 0, 0)
             topPill.layoutParams = topPillLp
             hintLp.topMargin = safeTop() + dp(68)
             hintPill.layoutParams = hintLp
             bottomLp.setMargins(dp(14), 0, dp(14), safeBottom() + dp(10))
             bottomCard.layoutParams = bottomLp
+            hideBtnLp.setMargins(0, safeTop() + dp(9), dp(70), 0)
+            hideBtn.layoutParams = hideBtnLp
             lockBtnLp.setMargins(0, safeTop() + dp(9), dp(14), 0)
             lockBtn.layoutParams = lockBtnLp
         }
