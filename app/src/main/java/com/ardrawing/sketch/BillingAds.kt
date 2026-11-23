@@ -107,8 +107,36 @@ class BillingAdsManager(
         get() = prefs.getLong("ad_free_until", 0L)
         private set(v) { prefs.edit().putLong("ad_free_until", v).apply() }
 
+    var remoteAdsEnabled: Boolean = true
+    var remoteVipGranted: Boolean = false
+
     val adsRemoved: Boolean
-        get() = permanentAdsRemoved || System.currentTimeMillis() < adFreeUntilMillis
+        get() = !remoteAdsEnabled || remoteVipGranted || permanentAdsRemoved || System.currentTimeMillis() < adFreeUntilMillis
+
+    fun syncCloudRewards(cloudVip: Boolean, cloudBonusCoins: Long): Boolean {
+        var changed = false
+        if (remoteVipGranted != cloudVip) {
+            remoteVipGranted = cloudVip
+            changed = true
+        }
+        val targetBonus = cloudBonusCoins.coerceIn(0L, 1_000_000L).toInt()
+        val applied = prefs.getInt("applied_cloud_bonus_coins", 0)
+        if (targetBonus > applied) {
+            val delta = targetBonus - applied
+            coins += delta
+            prefs.edit().putInt("applied_cloud_bonus_coins", targetBonus).apply()
+            changed = true
+        }
+        if (changed) onCoinsOrAdsChanged()
+        return changed
+    }
+
+    fun applyRemoteAdsEnabled(enabled: Boolean) {
+        if (remoteAdsEnabled != enabled) {
+            remoteAdsEnabled = enabled
+            onCoinsOrAdsChanged()
+        }
+    }
 
     fun remainingAdFreeMillis(): Long = (adFreeUntilMillis - System.currentTimeMillis()).coerceAtLeast(0L)
 

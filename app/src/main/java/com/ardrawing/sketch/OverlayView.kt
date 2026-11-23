@@ -40,11 +40,15 @@ class OverlayView @JvmOverloads constructor(
     private val viewToCam = Matrix()
     private val homography = Matrix()
 
+    enum class GridMode { OFF, GRID_3X3, GRID_4X4, CROSSHAIR }
+
     private var imageAlpha = 180
     var isLocked = false
         private set
-    var gridEnabled = false
+    var gridMode: GridMode = GridMode.OFF
         private set
+    val gridEnabled: Boolean
+        get() = gridMode != GridMode.OFF
     private var guidesVisible = true
     private var trackingGood = true
     private var initializedPlacement = false
@@ -97,8 +101,26 @@ class OverlayView @JvmOverloads constructor(
     }
 
     fun setGridEnabled(enabled: Boolean) {
-        gridEnabled = enabled
+        gridMode = if (enabled) GridMode.GRID_3X3 else GridMode.OFF
         invalidate()
+    }
+
+    fun cycleGridMode(): GridMode {
+        gridMode = when (gridMode) {
+            GridMode.OFF -> GridMode.GRID_3X3
+            GridMode.GRID_3X3 -> GridMode.GRID_4X4
+            GridMode.GRID_4X4 -> GridMode.CROSSHAIR
+            GridMode.CROSSHAIR -> GridMode.OFF
+        }
+        invalidate()
+        return gridMode
+    }
+
+    fun gridModeLabel(): String = when (gridMode) {
+        GridMode.OFF -> L.t("grid_off")
+        GridMode.GRID_3X3 -> L.t("grid_3x3")
+        GridMode.GRID_4X4 -> L.t("grid_4x4")
+        GridMode.CROSSHAIR -> L.t("grid_cross")
     }
 
     fun setGuidesVisible(visible: Boolean) {
@@ -206,12 +228,29 @@ class OverlayView @JvmOverloads constructor(
 
             canvas.save()
             canvas.concat(m)
-            if (gridEnabled) {
-                canvas.drawRect(0f, 0f, bw, bh, gridPaint)
-                canvas.drawLine(bw / 3f, 0f, bw / 3f, bh, gridPaint)
-                canvas.drawLine(bw * 2f / 3f, 0f, bw * 2f / 3f, bh, gridPaint)
-                canvas.drawLine(0f, bh / 3f, bw, bh / 3f, gridPaint)
-                canvas.drawLine(0f, bh * 2f / 3f, bw, bh * 2f / 3f, gridPaint)
+            when (gridMode) {
+                GridMode.GRID_3X3 -> {
+                    canvas.drawRect(0f, 0f, bw, bh, gridPaint)
+                    canvas.drawLine(bw / 3f, 0f, bw / 3f, bh, gridPaint)
+                    canvas.drawLine(bw * 2f / 3f, 0f, bw * 2f / 3f, bh, gridPaint)
+                    canvas.drawLine(0f, bh / 3f, bw, bh / 3f, gridPaint)
+                    canvas.drawLine(0f, bh * 2f / 3f, bw, bh * 2f / 3f, gridPaint)
+                }
+                GridMode.GRID_4X4 -> {
+                    canvas.drawRect(0f, 0f, bw, bh, gridPaint)
+                    for (i in 1..3) {
+                        canvas.drawLine(bw * i / 4f, 0f, bw * i / 4f, bh, gridPaint)
+                        canvas.drawLine(0f, bh * i / 4f, bw, bh * i / 4f, gridPaint)
+                    }
+                }
+                GridMode.CROSSHAIR -> {
+                    canvas.drawRect(0f, 0f, bw, bh, gridPaint)
+                    canvas.drawLine(bw / 2f, 0f, bw / 2f, bh, gridPaint)
+                    canvas.drawLine(0f, bh / 2f, bw, bh / 2f, gridPaint)
+                    canvas.drawLine(0f, 0f, bw, bh, gridPaint)
+                    canvas.drawLine(bw, 0f, 0f, bh, gridPaint)
+                }
+                GridMode.OFF -> {}
             }
             if (!isLocked && guidesVisible) {
                 val c = minOf(bw, bh) * 0.08f

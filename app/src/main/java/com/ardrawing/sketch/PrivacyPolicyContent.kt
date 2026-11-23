@@ -20,7 +20,7 @@ import android.widget.Toast
 
 object PrivacyPolicyContent {
 
-    const val EFFECTIVE_DATE = "November 14, 2026"
+    const val EFFECTIVE_DATE = "November 23, 2026"
     const val SUPPORT_EMAIL = "md.junaed.karim@gmail.com"
 
     private data class Section(val icon: StudioIcons.Type, val title: String, val body: String)
@@ -29,23 +29,23 @@ object PrivacyPolicyContent {
         listOf(
             Section(
                 StudioIcons.Type.SHIELD_LOCK,
-                "১. সংক্ষিপ্ত বিবরণ ও অ্যাকাউন্ট-মুক্ত ব্যবহার",
-                "Advance Drawing Studio (com.advancedrawing.studio) ব্যবহারকারীর গোপনীয়তাকে সর্বোচ্চ গুরুত্ব দেয়। এই অ্যাপ ব্যবহারের জন্য কোনো অ্যাকাউন্ট বা লগইনের প্রয়োজন নেই। আমরা কোনো ডেভেলপার সার্ভারে আপনার নাম, ফোন নম্বর, ঠিকানা বা আঁকা ছবি সংগ্রহ বা সংরক্ষণ করি না।"
+                "১. সংক্ষিপ্ত বিবরণ ও Google সাইন-ইন",
+                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio) ব্যবহারকারীর গোপনীয়তাকে সর্বোচ্চ গুরুত্ব দেয়। ক্লাউড প্রোফাইল, ভিআইপি রিওয়ার্ড এবং লাইভ অ্যাপ সেটিংস সিঙ্ক করার জন্য আমরা নিরাপদ Google Sign-In ও Firebase Cloud ব্যবহার করি। আপনার আঁকা ছবি কখনোই আমাদের সার্ভারে আপলোড করা হয় না।"
             ),
             Section(
                 StudioIcons.Type.CREATE_PEN,
                 "২. ডিভাইসের ভেতরে প্রসেসিং ও লোকাল স্টোরেজ",
-                "আপনার তোলা বা বাছাই করা ছবি, ক্রপ করা ছবি, ব্যাকগ্রাউন্ড রিমুভ এবং লাইন আর্ট প্রসেসিং সম্পূর্ণভাবে আপনার ফোনের ভেতরেই (OpenCV ও Google ML Kit-এর মাধ্যমে) সম্পন্ন হয়। 'My Gallery'-তে সেভ করা আঁকা ছবি, কয়েন ব্যালেন্স, ভাষা ও ডার্ক/লাইট থিম সেটিংস শুধুমাত্র আপনার ডিভাইসের প্রাইভেট স্টোরেজে থাকে এবং আমাদের সার্ভারে আপলোড হয় না।"
+                "আপনার তোলা বা বাছাই করা ছবি, ক্রপ করা ছবি, ব্যাকগ্রাউন্ড রিমুভ এবং লাইন আর্ট প্রসেসিং সম্পূর্ণভাবে আপনার ফোনের ভেতরেই (OpenCV ও Google ML Kit-এর মাধ্যমে) সম্পন্ন হয়। 'My Gallery'-তে সেভ করা আঁকা ছবি শুধুমাত্র আপনার ডিভাইসের প্রাইভেট স্টোরেজে থাকে এবং আমাদের সার্ভারে আপলোড হয় না।"
             ),
             Section(
                 StudioIcons.Type.CAMERA,
                 "৩. অ্যাপের অনুমতিসমূহ (Permissions)",
-                "• ক্যামেরা (CAMERA): শুধুমাত্র আপনার অনুমতি নিয়ে কাগজের উপর AR স্কেচ দেখানো ও রেফারেন্স ছবি তোলার জন্য ব্যবহৃত হয়। ক্যামেরার ভিডিও বা ফ্রেম কখনোই রেকর্ড বা আপলোড করা হয় না।\n• ছবি ও ফাইল নির্বাচন: শুধুমাত্র আপনি ছবি বা ZIP ফাইল ইম্পোর্ট করতে চাইলে Android-এর নিজস্ব সিস্টেম পিকার চালু হয়।\n• ইন্টারনেট ও নেটওয়ার্ক: বিজ্ঞাপন (AdMob), আপনার সার্চ করা রেফারেন্স ছবি এবং Google Play কেনাকাটা যাচাইয়ের জন্য ব্যবহৃত হয়।"
+                "• ক্যামেরা (CAMERA): শুধুমাত্র আপনার অনুমতি নিয়ে কাগজের উপর AR স্কেচ দেখানো ও রেফারেন্স ছবি তোলার জন্য ব্যবহৃত হয়। ক্যামেরার ভিডিও বা ফ্রেম কখনোই রেকর্ড বা আপলোড করা হয় না।\n• ছবি ও ফাইল নির্বাচন: শুধুমাত্র আপনি ছবি বা ZIP ফাইল ইম্পোর্ট করতে চাইলে Android-এর নিজস্ব সিস্টেম পিকার চালু হয়।\n• ইন্টারনেট ও নেটওয়ার্ক: Google Sign-In, Firebase ক্লাউড সিঙ্ক, বিজ্ঞাপন (AdMob), আপনার সার্চ করা রেফারেন্স ছবি এবং Google Play কেনাকাটা যাচাইয়ের জন্য ব্যবহৃত হয়।"
             ),
             Section(
                 StudioIcons.Type.GLOBE,
                 "৪. তৃতীয় পক্ষের সেবা (Third-Party Services)",
-                "• Google AdMob: অ্যাপ ওপেন, ব্যানার এবং রিওয়ার্ডেড অ্যাড দেখানোর জন্য ব্যবহৃত হয় (অ্যাড-ফ্রি পাস বা VIP নিলে অ্যাড বন্ধ থাকে)। বিজ্ঞাপন প্রদর্শনের প্রয়োজনে Google তার নিজস্ব Privacy Policy অনুযায়ী ডিভাইস আইডি বা বিজ্ঞাপন-সংক্রান্ত মেট্রিক্স ব্যবহার করতে পারে।\n• Google Play Billing: কয়েন প্যাক ও লাইফটাইম অ্যাড-ফ্রি কেনাকাটা নিরাপদে Google Play-র মাধ্যমে সম্পন্ন হয়। আমরা আপনার কার্ড বা পেমেন্ট তথ্য সংগ্রহ করি না।\n• Microsoft Bing Images: আপনি যদি অ্যাপের ভেতরের ওয়েব সার্চ দিয়ে ছবি খোঁজেন, তবে সার্চ শব্দগুলো Bing-এ পাঠানো হয় এবং Microsoft-এর প্রাইভেসি নীতি প্রযোজ্য হয়।"
+                "• Google Sign-In ও Firebase Cloud: নিরাপদ লগইন, ভিআইপি/বোনাস কয়েন সিঙ্ক ও অ্যাপ স্ট্যাটাস আপডেটের জন্য ব্যবহৃত হয়।\n• Google AdMob: অ্যাপ ওপেন, ব্যানার এবং রিওয়ার্ডেড অ্যাড দেখানোর জন্য ব্যবহৃত হয় (অ্যাড-ফ্রি পাস বা VIP নিলে অ্যাড বন্ধ থাকে)।\n• Google Play Billing: কয়েন প্যাক ও লাইফটাইম অ্যাড-ফ্রি কেনাকাটা নিরাপদে Google Play-র মাধ্যমে সম্পন্ন হয়। আমরা আপনার কার্ড বা পেমেন্ট তথ্য সংগ্রহ করি না।\n• Microsoft Bing Images: আপনি যদি অ্যাপের ভেতরের ওয়েব সার্চ দিয়ে ছবি খোঁজেন, তবে সার্চ শব্দগুলো Bing-এ পাঠানো হয় এবং Microsoft-এর প্রাইভেসি নীতি প্রযোজ্য হয়।"
             ),
             Section(
                 StudioIcons.Type.TRASH,
@@ -55,7 +55,7 @@ object PrivacyPolicyContent {
             Section(
                 StudioIcons.Type.CHILD_SHIELD,
                 "৬. শিশুদের গোপনীয়তা (Children's Privacy)",
-                "Advance Drawing Studio জেনেশুনে ১৩ বছরের কম বয়সী শিশুদের কোনো ব্যক্তিগত তথ্য সংগ্রহ করে না। কোনো অভিভাবক মনে করলে যে তৃতীয় পক্ষের সেবার মাধ্যমে শিশুর তথ্য শেয়ার হয়েছে, আমাদের ইমেইলে জানালে দ্রুত ব্যবস্থা নেওয়া হবে।"
+                "Advance Drawing : AR Sketch & Trace Studio জেনেশুনে ১৩ বছরের কম বয়সী শিশুদের কোনো ব্যক্তিগত তথ্য সংগ্রহ করে না। কোনো অভিভাবক মনে করলে যে তৃতীয় পক্ষের সেবার মাধ্যমে শিশুর তথ্য শেয়ার হয়েছে, আমাদের ইমেইলে জানালে দ্রুত ব্যবস্থা নেওয়া হবে।"
             ),
             Section(
                 StudioIcons.Type.MAIL,
@@ -67,23 +67,23 @@ object PrivacyPolicyContent {
         listOf(
             Section(
                 StudioIcons.Type.SHIELD_LOCK,
-                "1. Overview & No Account Required",
-                "Advance Drawing Studio (com.advancedrawing.studio) respects your privacy. No account registration or login is required, and we do not operate backend servers that collect your name, phone number, address, or personal drawings."
+                "1. Overview & Google Sign-In",
+                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio) respects your privacy. We use Google Sign-In and Firebase Cloud Firestore to sync your studio account status, VIP rewards, and live app configuration. Your personal drawings are never uploaded to our servers."
             ),
             Section(
                 StudioIcons.Type.CREATE_PEN,
                 "2. On-Device Processing & Local Storage",
-                "Photos you capture, select, crop, edit, or trace are processed locally on your device using OpenCV and Google ML Kit. Drawings saved in My Gallery, along with your coin balance, language, and theme preferences, remain strictly on your device in private app storage and are never uploaded to developer servers."
+                "Photos you capture, select, crop, edit, or trace are processed locally on your device using OpenCV and Google ML Kit. Drawings saved in My Gallery stay strictly on your device in private app storage and are never uploaded to developer servers."
             ),
             Section(
                 StudioIcons.Type.CAMERA,
                 "3. App Permissions We Use",
-                "• Camera (CAMERA): Used solely with your permission to project reference sketches over paper in AR Drawing mode or take a reference photo. Live camera frames are processed in memory for surface tracking and are never recorded or uploaded.\n• Photos & Files: Uses Android's system picker only when you explicitly choose to import an image or ZIP archive.\n• Internet & Network State: Required to load Google AdMob ads, perform optional web sketch searches initiated by you, and verify Google Play purchases."
+                "• Camera (CAMERA): Used solely with your permission to project reference sketches over paper in AR Drawing mode or take a reference photo. Live camera frames are processed in memory for surface tracking and are never recorded or uploaded.\n• Photos & Files: Uses Android's system picker only when you explicitly choose to import an image or ZIP archive.\n• Internet & Network State: Required for Google Sign-In, Firebase Cloud sync, Google AdMob ads, optional web sketch searches initiated by you, and Google Play purchases."
             ),
             Section(
                 StudioIcons.Type.GLOBE,
                 "4. Third-Party Services & SDKs",
-                "• Google AdMob: Displays App Open, Banner, and Rewarded Interstitial ads (unless paused with Coin Ad-Free passes or Lifetime VIP). Google may process advertising identifiers and ad metrics under Google's Privacy Policy.\n• Google Play Billing: Processes Coin packs and Lifetime Ad-Free purchases securely via Google Play. We never collect or store payment card details.\n• Microsoft Bing Images (In-App Search): When you choose to search the web for sketches, search queries are sent directly to Bing Images under Microsoft's Privacy Statement."
+                "• Google Sign-In & Firebase Cloud Firestore: Authenticates your Studio account and syncs VIP/coin entitlements and live studio configuration.\n• Google AdMob: Displays App Open, Banner, and Rewarded Interstitial ads (unless paused with Coin Ad-Free passes or Lifetime VIP). Google may process advertising identifiers and ad metrics under Google's Privacy Policy.\n• Google Play Billing: Processes Coin packs and Lifetime Ad-Free purchases securely via Google Play. We never collect or store payment card details.\n• Microsoft Bing Images (In-App Search): When you choose to search the web for sketches, search queries are sent directly to Bing Images under Microsoft's Privacy Statement."
             ),
             Section(
                 StudioIcons.Type.TRASH,
@@ -93,7 +93,7 @@ object PrivacyPolicyContent {
             Section(
                 StudioIcons.Type.CHILD_SHIELD,
                 "6. Children's Privacy",
-                "Advance Drawing Studio does not knowingly collect personal information from children under 13 (or the minimum applicable age in your region). Please contact us if you believe any information was inadvertently collected."
+                "Advance Drawing : AR Sketch & Trace Studio does not knowingly collect personal information from children under 13 (or the minimum applicable age in your region). Please contact us if you believe any information was inadvertently collected."
             ),
             Section(
                 StudioIcons.Type.MAIL,
@@ -105,9 +105,9 @@ object PrivacyPolicyContent {
 
     fun buildPlainText(isBn: Boolean): String {
         val header = if (isBn) {
-            "Privacy Policy — Advance Drawing Studio (com.advancedrawing.studio)\nকার্যকর তারিখ: $EFFECTIVE_DATE\n\n"
+            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio)\nকার্যকর তারিখ: $EFFECTIVE_DATE\n\n"
         } else {
-            "Privacy Policy — Advance Drawing Studio (com.advancedrawing.studio)\nEffective Date: $EFFECTIVE_DATE\n\n"
+            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio)\nEffective Date: $EFFECTIVE_DATE\n\n"
         }
         return header + sections(isBn).joinToString("\n\n") { "${it.title}\n${it.body}" }
     }
@@ -174,8 +174,8 @@ object PrivacyPolicyContent {
         hero.addView(heroIconWell, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(14) })
         val heroTextCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         heroTextCol.addView(TextView(act).apply {
-            text = "Advance Drawing Studio"
-            textSize = 18f
+            text = "Advance Drawing : AR Sketch & Trace Studio"
+            textSize = 16.5f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
         })
@@ -253,7 +253,7 @@ object PrivacyPolicyContent {
         ) {
             try {
                 act.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$SUPPORT_EMAIL")).apply {
-                    putExtra(Intent.EXTRA_SUBJECT, "Advance Drawing Studio — Privacy Inquiry")
+                    putExtra(Intent.EXTRA_SUBJECT, "Advance Drawing : AR Sketch & Trace Studio — Privacy Inquiry")
                 })
             } catch (_: Exception) {}
         }

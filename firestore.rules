@@ -1,0 +1,219 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isPrimaryAdmin() {
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        'email_verified' in request.auth.token &&
+        request.auth.token.email == 'junaedkarim263@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isPrimaryAdmin() ||
+        (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // Entity validation helpers
+    function isValidUserRecord(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.email is string && data.email.size() <= 120 &&
+        data.deviceModel is string && data.deviceModel.size() <= 80 &&
+        data.appVersion is string && data.appVersion.size() <= 32 &&
+        data.language is string && data.language.size() <= 16 &&
+        data.activeScreen is string && data.activeScreen.size() <= 32 &&
+        data.online is bool &&
+        data.blocked is bool &&
+        data.vipGranted is bool &&
+        data.bonusCoins is int && data.bonusCoins >= 0 && data.bonusCoins <= 1000000 &&
+        data.drawingsCount is int && data.drawingsCount >= 0 && data.drawingsCount <= 100000 &&
+        data.sessionsCount is int && data.sessionsCount >= 0 && data.sessionsCount <= 100000 &&
+        data.adminNote is string && data.adminNote.size() <= 200 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.lastActiveAt is timestamp && data.lastActiveAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidActivityLog(data) {
+      return data.action is string && data.action.size() >= 1 && data.action.size() <= 40 &&
+        data.detail is string && data.detail.size() <= 140 &&
+        data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidAppConfig(data) {
+      return data.maintenanceMode is bool &&
+        data.maintenanceMessage is string && data.maintenanceMessage.size() <= 300 &&
+        data.announcementEnabled is bool &&
+        data.announcementTitle is string && data.announcementTitle.size() <= 80 &&
+        data.announcementText is string && data.announcementText.size() <= 240 &&
+        data.adsEnabled is bool &&
+        data.arCameraEnabled is bool &&
+        data.lightboxEnabled is bool &&
+        data.bingSearchEnabled is bool &&
+        data.storeEnabled is bool &&
+        data.minSupportedVersion is string && data.minSupportedVersion.size() <= 20 &&
+        data.welcomeBonusCoins is int && data.welcomeBonusCoins >= 0 && data.welcomeBonusCoins <= 5000 &&
+        data.updatedBy is string && data.updatedBy.size() <= 120 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAdminMember(data) {
+      return data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+        data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128 &&
+        data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // Users collection (PII isolated to owner & admin)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().blocked == false &&
+        incoming().vipGranted == false &&
+        incoming().bonusCoins == 0 &&
+        incoming().adminNote == '' &&
+        incoming().keys().hasAll([
+          'userId', 'displayName', 'email', 'deviceModel', 'appVersion',
+          'language', 'activeScreen', 'online', 'blocked', 'vipGranted',
+          'bonusCoins', 'drawingsCount', 'sessionsCount', 'adminNote',
+          'createdAt', 'lastActiveAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'displayName', 'email', 'deviceModel', 'appVersion',
+          'language', 'activeScreen', 'online', 'blocked', 'vipGranted',
+          'bonusCoins', 'drawingsCount', 'sessionsCount', 'adminNote',
+          'createdAt', 'lastActiveAt', 'updatedAt'
+        ]) &&
+        isValidUserRecord(incoming());
+
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidUserRecord(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          (isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'blocked', 'vipGranted', 'bonusCoins', 'adminNote', 'updatedAt'
+            ])) ||
+          (isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'email', 'deviceModel', 'appVersion',
+              'language', 'activeScreen', 'online', 'drawingsCount',
+              'sessionsCount', 'lastActiveAt', 'updatedAt'
+            ]))
+        );
+
+      allow delete: if isAdmin() && isValidId(userId);
+
+      // Per-user activity logs subcollection
+      match /activity_logs/{logId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(logId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+          isValidId(userId) &&
+          isValidId(logId) &&
+          isOwner(userId) &&
+          incoming().keys().hasAll(['action', 'detail', 'createdAt']) &&
+          incoming().keys().hasOnly(['action', 'detail', 'createdAt']) &&
+          isValidActivityLog(incoming());
+
+        allow update: if false;
+        allow delete: if isAdmin() && isValidId(userId) && isValidId(logId);
+      }
+    }
+
+    // Global remote app configuration (singleton document: /app_config/global)
+    match /app_config/{configId} {
+      allow get: if isSignedIn() && configId == 'global';
+      allow list: if false;
+
+      allow create: if isAdmin() &&
+        configId == 'global' &&
+        incoming().keys().hasAll([
+          'maintenanceMode', 'maintenanceMessage', 'announcementEnabled',
+          'announcementTitle', 'announcementText', 'adsEnabled',
+          'arCameraEnabled', 'lightboxEnabled', 'bingSearchEnabled',
+          'storeEnabled', 'minSupportedVersion', 'welcomeBonusCoins',
+          'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'maintenanceMode', 'maintenanceMessage', 'announcementEnabled',
+          'announcementTitle', 'announcementText', 'adsEnabled',
+          'arCameraEnabled', 'lightboxEnabled', 'bingSearchEnabled',
+          'storeEnabled', 'minSupportedVersion', 'welcomeBonusCoins',
+          'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidAppConfig(incoming());
+
+      allow update: if isAdmin() &&
+        configId == 'global' &&
+        isValidAppConfig(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'maintenanceMode', 'maintenanceMessage', 'announcementEnabled',
+          'announcementTitle', 'announcementText', 'adsEnabled',
+          'arCameraEnabled', 'lightboxEnabled', 'bingSearchEnabled',
+          'storeEnabled', 'minSupportedVersion', 'welcomeBonusCoins',
+          'updatedBy', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // Delegated admin registry (managed exclusively by primary admin)
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isPrimaryAdmin() &&
+        isValidId(adminUid) &&
+        incoming().keys().hasAll(['email', 'addedBy', 'createdAt']) &&
+        incoming().keys().hasOnly(['email', 'addedBy', 'createdAt']) &&
+        isValidAdminMember(incoming());
+
+      allow update: if isPrimaryAdmin() &&
+        isValidId(adminUid) &&
+        isValidAdminMember(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['email', 'addedBy']);
+
+      allow delete: if isPrimaryAdmin() && isValidId(adminUid);
+    }
+  }
+}

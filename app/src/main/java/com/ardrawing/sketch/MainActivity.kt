@@ -68,6 +68,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import org.opencv.android.OpenCVLoader
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -85,7 +87,7 @@ import java.util.zip.ZipOutputStream
 class MainActivity : ComponentActivity() {
 
     private enum class Tab { HOME, GALLERY, STORE, SETTINGS }
-    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, LIGHTBOX, CONGRATS }
+    private enum class Flow { SPLASH, AUTH, RESTRICTED, ADMIN, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, LIGHTBOX, CONGRATS }
 
     private var flow = Flow.SPLASH
     private var currentTab = Tab.HOME
@@ -96,6 +98,9 @@ class MainActivity : ComponentActivity() {
     private val tracker by lazy { PlaneTracker() }
 
     private lateinit var billingAds: BillingAdsManager
+    private lateinit var cloud: FirebaseCloudManager
+    private var sessionTimerRunnable: Runnable? = null
+    private var sessionSeconds = 0
     private val prefs by lazy { getSharedPreferences("ar_draw_prefs", MODE_PRIVATE) }
     private val galleryDir by lazy { File(filesDir, "gallery").apply { mkdirs() } }
 
@@ -180,6 +185,7 @@ class MainActivity : ComponentActivity() {
             onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } }
         )
         try { billingAds.init() } catch (_: Throwable) {}
+        cloud = FirebaseCloudManager(this)
 
         root = FrameLayout(this).apply { setBackgroundColor(UiTheme.bg) }
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -200,6 +206,8 @@ class MainActivity : ComponentActivity() {
                 }
                 when (flow) {
                     Flow.SPLASH -> {}
+                    Flow.AUTH, Flow.RESTRICTED -> finish()
+                    Flow.ADMIN -> { cloud.stopAdminUsersListener(); showFlow(Flow.MAIN) }
                     Flow.CAMERA -> { stopCamera(); showFlow(Flow.EDITOR) }
                     Flow.LIGHTBOX -> {
                         if (!isLightboxLocked) {
@@ -335,7 +343,7 @@ class MainActivity : ComponentActivity() {
                     if (isFinishing || isDestroyed || flow != Flow.SPLASH) return@postDelayed
                     billingAds.showStartupAd(this@MainActivity) {
                         runOnUiThread {
-                            if (!isFinishing && !isDestroyed) showFlow(Flow.MAIN)
+                            if (!isFinishing && !isDestroyed) proceedAfterSplash()
                         }
                     }
                 }, 140)
@@ -343,16 +351,145 @@ class MainActivity : ComponentActivity() {
         }, 45)
     }
 
+    private fun proceedAfterSplash() {
+        if (isFinishing || isDestroyed) return
+        cloud.attemptAutoSignIn(
+            activity = this,
+            scope = lifecycleScope,
+            onAuthSuccess = {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) onAuthenticatedReady()
+                }
+            },
+            onUnauthenticated = {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) showFlow(Flow.AUTH)
+                }
+            }
+        )
+    }
+
+    private fun shouldShowRestricted(): Boolean {
+        if (cloud.isAdminUser) return false
+        return cloud.currentUserRecord?.blocked == true || cloud.globalConfig.maintenanceMode
+    }
+
+    private fun onAuthenticatedReady() {
+        lifecycleScope.launch {
+            cloud.initializeAuthenticatedSession(
+                languageCode = L.lang,
+                onConfigUpdated = { cfg ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        billingAds.applyRemoteAdsEnabled(cfg.adsEnabled)
+                        if (shouldShowRestricted()) {
+                            if (flow != Flow.RESTRICTED) showFlow(Flow.RESTRICTED)
+                            else renderRestrictedGate()
+                        } else if (flow == Flow.RESTRICTED) {
+                            showFlow(Flow.MAIN)
+                        } else if (flow == Flow.MAIN) {
+                            if (!cfg.storeEnabled && !cloud.isAdminUser && currentTab == Tab.STORE) {
+                                currentTab = Tab.HOME
+                            }
+                            renderMain()
+                        }
+                    }
+                },
+                onSelfUserUpdated = { rec ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        billingAds.syncCloudRewards(rec.vipGranted, rec.bonusCoins)
+                        if (shouldShowRestricted()) {
+                            if (flow != Flow.RESTRICTED) showFlow(Flow.RESTRICTED)
+                            else renderRestrictedGate()
+                        } else if (flow == Flow.RESTRICTED) {
+                            showFlow(Flow.MAIN)
+                        }
+                    }
+                },
+                onAdminStatusResolved = { _ ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && flow == Flow.MAIN) renderMain()
+                    }
+                }
+            )
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (shouldShowRestricted()) showFlow(Flow.RESTRICTED)
+                else showFlow(Flow.MAIN)
+            }
+        }
+    }
+
+    private fun handleSignOut() {
+        cloud.signOut(lifecycleScope) {
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    billingAds.syncCloudRewards(false, 0L)
+                    billingAds.applyRemoteAdsEnabled(true)
+                    showFlow(Flow.AUTH)
+                }
+            }
+        }
+    }
+
+    private fun stopSessionTimer() {
+        sessionTimerRunnable?.let { handler.removeCallbacks(it) }
+        sessionTimerRunnable = null
+    }
+
+    private fun startSessionTimer(targetTv: TextView) {
+        stopSessionTimer()
+        sessionSeconds = 0
+        fun fmt(sec: Int): String = String.format("%02d:%02d", sec / 60, sec % 60)
+        targetTv.text = fmt(0)
+        val r = object : Runnable {
+            override fun run() {
+                if (isFinishing || isDestroyed || (flow != Flow.CAMERA && flow != Flow.LIGHTBOX)) return
+                sessionSeconds++
+                targetTv.text = fmt(sessionSeconds)
+                handler.postDelayed(this, 1000L)
+            }
+        }
+        sessionTimerRunnable = r
+        handler.postDelayed(r, 1000L)
+    }
+
     private fun showFlow(target: Flow) {
+        if (!cloud.isAdminUser && target != Flow.AUTH && target != Flow.RESTRICTED && target != Flow.SPLASH) {
+            val cfg = cloud.globalConfig
+            if (target == Flow.CAMERA && !cfg.arCameraEnabled) {
+                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
+                return
+            }
+            if (target == Flow.LIGHTBOX && !cfg.lightboxEnabled) {
+                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
+                return
+            }
+            if (target == Flow.BROWSER && !cfg.bingSearchEnabled) {
+                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
+                return
+            }
+        }
         applyInsetsCallback = null
         if (flow == Flow.CAMERA && target != Flow.CAMERA) stopCamera()
         if (flow == Flow.LIGHTBOX && target != Flow.LIGHTBOX) {
             isLightboxLocked = false
             restoreWindowDefaults()
         }
+        if ((flow == Flow.CAMERA || flow == Flow.LIGHTBOX) && target != Flow.CAMERA && target != Flow.LIGHTBOX) {
+            stopSessionTimer()
+        }
+        if (flow == Flow.ADMIN && target != Flow.ADMIN) cloud.stopAdminUsersListener()
         if (flow == Flow.BROWSER && target != Flow.BROWSER) destroyWebView()
         flow = target
+        if (target != Flow.SPLASH && target != Flow.AUTH && cloud.currentUser() != null) {
+            lifecycleScope.launch { cloud.updateActiveScreen(target.name, L.lang) }
+        }
         when (target) {
+            Flow.AUTH -> renderAuthGate()
+            Flow.RESTRICTED -> renderRestrictedGate()
+            Flow.ADMIN -> renderAdminPanel()
             Flow.MAIN -> renderMain()
             Flow.LANG -> renderLanguagePage()
             Flow.PRIVACY -> renderPrivacyPage()
@@ -365,6 +502,76 @@ class MainActivity : ComponentActivity() {
             Flow.CONGRATS -> renderCongrats()
             Flow.SPLASH -> showSplash()
         }
+    }
+
+    private fun renderAuthGate() {
+        applyInsetsCallback = null
+        updateSystemBarsAppearance(!UiTheme.isDark)
+        root.removeAllViews()
+        val view = AdminPanelUi.buildAuthGateView(
+            act = this,
+            safeTopPx = safeTop(),
+            safeBottomPx = safeBottom(),
+            cloud = cloud,
+            scope = lifecycleScope,
+            onSignedIn = { onAuthenticatedReady() }
+        )
+        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        applyInsetsCallback = {
+            view.setPadding(dp(22), safeTop() + dp(20), dp(22), safeBottom() + dp(20))
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun renderRestrictedGate() {
+        applyInsetsCallback = null
+        updateSystemBarsAppearance(!UiTheme.isDark)
+        root.removeAllViews()
+        val isBlocked = cloud.currentUserRecord?.blocked == true
+        val title = if (isBlocked) L.t("blocked_title") else L.t("maintenance_title")
+        val msg = if (isBlocked) {
+            L.t("blocked_message")
+        } else {
+            cloud.globalConfig.maintenanceMessage.ifBlank { L.t("maintenance_title") }
+        }
+        val view = AdminPanelUi.buildRestrictedGateView(
+            act = this,
+            safeTopPx = safeTop(),
+            safeBottomPx = safeBottom(),
+            isBlocked = isBlocked,
+            title = title,
+            message = msg,
+            email = cloud.currentUser()?.email ?: "",
+            onSignOut = { handleSignOut() }
+        )
+        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        applyInsetsCallback = {
+            view.setPadding(dp(24), safeTop() + dp(20), dp(24), safeBottom() + dp(20))
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun renderAdminPanel() {
+        if (!cloud.isAdminUser) {
+            showFlow(Flow.MAIN)
+            return
+        }
+        applyInsetsCallback = null
+        updateSystemBarsAppearance(!UiTheme.isDark)
+        root.removeAllViews()
+        val view = AdminPanelUi.buildAdminPanel(
+            act = this,
+            safeTopPx = safeTop(),
+            safeBottomPx = safeBottom(),
+            cloud = cloud,
+            scope = lifecycleScope,
+            onBack = { showFlow(Flow.MAIN) }
+        )
+        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        applyInsetsCallback = {
+            view.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(10))
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun openDirectBingForCharacter(character: String, series: String, returnFlow: Flow) {
@@ -419,19 +626,19 @@ class MainActivity : ComponentActivity() {
         val titleStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleStack.addView(TextView(this).apply {
             text = when (currentTab) {
-                Tab.HOME -> L.t("app")
+                Tab.HOME -> L.t("app_short")
                 Tab.GALLERY -> L.t("my_activity")
                 Tab.STORE -> L.t("store_title")
                 Tab.SETTINGS -> L.t("settings")
             }
-            textSize = 18f
+            textSize = 17.5f
             UiTheme.applyDisplayFont(this, true)
             setTextColor(UiTheme.textMain)
             maxLines = 1
         })
         if (currentTab == Tab.HOME) {
             titleStack.addView(TextView(this).apply {
-                text = L.t("studio_badge")
+                text = L.t("app_sub")
                 textSize = 10.5f
                 UiTheme.applyUiFont(this, bold = true)
                 setTextColor(UiTheme.accentBright)
@@ -439,6 +646,24 @@ class MainActivity : ComponentActivity() {
             })
         }
         topBar.addView(titleStack, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+
+        if (cloud.isAdminUser) {
+            val adminPill = StudioIcons.iconPill(
+                context = this,
+                iconType = StudioIcons.Type.SHIELD_LOCK,
+                label = L.t("admin_badge"),
+                textColor = Color.WHITE,
+                iconColor = Color.WHITE,
+                iconSizeDp = 12,
+                textSizeSp = 10f
+            ).apply {
+                background = UiTheme.premiumGrad(this@MainActivity, "#312E81", "#7C3AED", 12)
+                UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 5)
+                setPadding(dp(9), dp(4), dp(9), dp(4))
+                UiTheme.bounce(this) { showFlow(Flow.ADMIN) }
+            }
+            topBar.addView(adminPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) })
+        }
 
         if (billingAds.adsRemoved) {
             val shieldPill = StudioIcons.iconPill(
@@ -478,6 +703,8 @@ class MainActivity : ComponentActivity() {
         mainCol.addView(topBar)
         mainCol.addView(View(this).apply { setBackgroundColor(UiTheme.stroke) }, LinearLayout.LayoutParams(MATCH_PARENT, dp(1)))
 
+        val cfg = cloud.globalConfig
+        val liveAnnouncement = if (cfg.announcementEnabled) cfg.announcementTitle to cfg.announcementText else null
         val body = when (currentTab) {
             Tab.HOME -> UiTabs.buildHome(
                 this,
@@ -490,11 +717,24 @@ class MainActivity : ComponentActivity() {
                 { q -> browserQuery = q; browserReturnFlow = Flow.MAIN; showFlow(Flow.BROWSER) },
                 { series -> selectedSeries = series; showFlow(Flow.ANIME_CHARS) },
                 { ch, series -> openDirectBingForCharacter(ch, series, Flow.MAIN) },
-                { renderMain() }
+                { renderMain() },
+                announcement = liveAnnouncement
             )
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { showCuteImportPopup() }, { exportZipFiles(it) }, { openEditorWithBitmap(it) }, { renderMain() })
             Tab.STORE -> UiTabs.buildStore(this, billingAds)
-            Tab.SETTINGS -> UiTabs.buildSettings(this, prefs, { showFlow(Flow.LANG) }, { showFlow(Flow.PRIVACY) }) { renderMain() }
+            Tab.SETTINGS -> UiTabs.buildSettings(
+                act = this,
+                prefs = prefs,
+                onOpenLanguagePage = { showFlow(Flow.LANG) },
+                onOpenPrivacyPage = { showFlow(Flow.PRIVACY) },
+                onRefresh = { renderMain() },
+                userEmail = cloud.currentUser()?.email,
+                userName = cloud.currentUser()?.displayName,
+                isAdmin = cloud.isAdminUser,
+                isVip = billingAds.permanentAdsRemoved,
+                onOpenAdminPanel = if (cloud.isAdminUser) ({ showFlow(Flow.ADMIN) }) else null,
+                onSignOut = { handleSignOut() }
+            )
         }
         UiTheme.animatePageIn(body, 12, 220L)
         mainCol.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
@@ -512,12 +752,15 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(8), dp(7), dp(8), dp(7))
             elevation = dp(14).toFloat()
         }
-        listOf(
-            Triple(Tab.HOME, StudioIcons.Type.HOME, L.t("home")),
-            Triple(Tab.GALLERY, StudioIcons.Type.GALLERY, L.t("my_gallery")),
-            Triple(Tab.STORE, StudioIcons.Type.STORE, L.t("store")),
-            Triple(Tab.SETTINGS, StudioIcons.Type.SETTINGS, L.t("settings"))
-        ).forEach { (tab, icon, label) ->
+        val navTabs = buildList {
+            add(Triple(Tab.HOME, StudioIcons.Type.HOME, L.t("home")))
+            add(Triple(Tab.GALLERY, StudioIcons.Type.GALLERY, L.t("my_gallery")))
+            if (cfg.storeEnabled || cloud.isAdminUser) {
+                add(Triple(Tab.STORE, StudioIcons.Type.STORE, L.t("store")))
+            }
+            add(Triple(Tab.SETTINGS, StudioIcons.Type.SETTINGS, L.t("settings")))
+        }
+        navTabs.forEach { (tab, icon, label) ->
             val sel = currentTab == tab
             nav.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1882,8 +2125,10 @@ class MainActivity : ComponentActivity() {
 
         val autoBgBtn = makeToolBox()
         val keepLinesBtn = makeToolBox()
+        val bwSketchBtn = makeToolBox()
         val cropBtn = makeToolBox()
         val pickColorBtn = makeToolBox()
+        val rotateBtn = makeToolBox()
         val undoBtn = makeToolBox()
 
         val pickPanel = LinearLayout(this).apply {
@@ -1951,6 +2196,10 @@ class MainActivity : ComponentActivity() {
             keepLinesBtn.background = UiTheme.premiumGrad(this, "#8B5CF6", "#6D28D9", 15)
             UiTheme.applyColoredShadow(keepLinesBtn, Color.parseColor("#8B5CF6"), 6)
 
+            setToolContent(bwSketchBtn, StudioIcons.Type.SPARK, if (isProcessingBg) L.t("removing_bg") else L.t("bw_sketch_btn"), Color.WHITE)
+            bwSketchBtn.background = UiTheme.premiumGrad(this, "#10B981", "#059669", 15)
+            UiTheme.applyColoredShadow(bwSketchBtn, Color.parseColor("#10B981"), 6)
+
             setToolContent(cropBtn, StudioIcons.Type.CROP, L.t("crop_resize"), Color.WHITE)
             cropBtn.background = UiTheme.premiumGrad(this, "#0EA5E9", "#0284C7", 15)
             UiTheme.applyColoredShadow(cropBtn, Color.parseColor("#0EA5E9"), 6)
@@ -1964,6 +2213,10 @@ class MainActivity : ComponentActivity() {
                 pickColorBtn.background = UiTheme.premiumSurface(this, UiTheme.surface, 15, UiTheme.stroke)
                 pickColorBtn.elevation = dp(2).toFloat()
             }
+
+            setToolContent(rotateBtn, StudioIcons.Type.RESTORE, L.t("rotate_90"), UiTheme.textMain)
+            rotateBtn.background = UiTheme.premiumSurface(this, UiTheme.surface, 15, UiTheme.stroke)
+            rotateBtn.elevation = dp(2).toFloat()
 
             val canRestore = bgRemoved && cutoutBitmap != null
             setToolContent(
@@ -2055,14 +2308,37 @@ class MainActivity : ComponentActivity() {
             if (isProcessingBg) return@bounce
             val cur = activeEditBitmap() ?: return@bounce
             isProcessingBg = true; isColorPickMode = false; sync()
-            ImageProcessor.removeBackgroundAsync(cur) { res -> runOnUiThread { applyProcessed(res) } }
+            ImageProcessor.removeBackgroundAsync(cur) { res ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || flow != Flow.EDITOR) return@runOnUiThread
+                    applyProcessed(res)
+                }
+            }
         }
 
         UiTheme.bounce(keepLinesBtn) {
             if (isProcessingBg) return@bounce
             val cur = activeEditBitmap() ?: return@bounce
             isProcessingBg = true; isColorPickMode = false; sync()
-            ImageProcessor.extractInkLinesAsync(cur, sensitivity = 58) { res -> runOnUiThread { applyProcessed(res) } }
+            ImageProcessor.extractInkLinesAsync(cur, sensitivity = 58) { res ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || flow != Flow.EDITOR) return@runOnUiThread
+                    applyProcessed(res)
+                }
+            }
+        }
+
+        UiTheme.bounce(bwSketchBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            isProcessingBg = true; isColorPickMode = false; sync()
+            ioExecutor.execute {
+                val res = try { ImageProcessor.toCleanBwSketch(cur) } catch (_: Throwable) { cur }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || flow != Flow.EDITOR) return@runOnUiThread
+                    applyProcessed(res)
+                }
+            }
         }
 
         UiTheme.bounce(cropBtn) {
@@ -2080,6 +2356,15 @@ class MainActivity : ComponentActivity() {
             sync()
         }
 
+        UiTheme.bounce(rotateBtn) {
+            if (isProcessingBg) return@bounce
+            val cur = activeEditBitmap() ?: return@bounce
+            isColorPickMode = false
+            val m = Matrix().apply { postRotate(90f) }
+            val rotated = Bitmap.createBitmap(cur, 0, 0, cur.width, cur.height, m, true)
+            applyProcessed(rotated)
+        }
+
         UiTheme.bounce(donePickBtn) {
             isColorPickMode = false
             sync()
@@ -2092,6 +2377,7 @@ class MainActivity : ComponentActivity() {
             isProcessingBg = true; sync()
             ImageProcessor.removePickedColorAsync(cur, target, colorTolerance) { res ->
                 runOnUiThread {
+                    if (isFinishing || isDestroyed || flow != Flow.EDITOR) return@runOnUiThread
                     pickedColor = null
                     pickedTouchX = -1f
                     pickedTouchY = -1f
@@ -2123,9 +2409,14 @@ class MainActivity : ComponentActivity() {
         col.addView(row1, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
 
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row2.addView(cropBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
-        row2.addView(pickColorBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
+        row2.addView(bwSketchBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        row2.addView(cropBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
         col.addView(row2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+
+        val row3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row3.addView(pickColorBtn, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        row3.addView(rotateBtn, LinearLayout.LayoutParams(0, dp(48), 1f))
+        col.addView(row3, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
 
         col.addView(undoBtn, LinearLayout.LayoutParams(MATCH_PARENT, dp(46)).apply { bottomMargin = dp(10) })
         col.addView(pickPanel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
@@ -2315,20 +2606,25 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(10))
         }
-        val gridPill = StudioIcons.iconPill(
-            context = this,
-            iconType = StudioIcons.Type.GRID,
-            label = "3×3",
-            textColor = Color.WHITE,
-            iconColor = Color.parseColor("#CBD5E1"),
-            iconSizeDp = 15,
-            textSizeSp = 12f
-        ).apply {
+        val gridPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = UiTheme.round(this@MainActivity, Color.parseColor("#1AFFFFFF"), 12, Color.parseColor("#28FFFFFF"))
             setPadding(dp(12), dp(6), dp(12), dp(6))
         }
+        val gridIconIv = StudioIcons.imageView(this, StudioIcons.Type.GRID, 15, Color.parseColor("#CBD5E1"))
+        val gridLabelTv = TextView(this).apply {
+            text = overlay.gridModeLabel()
+            textSize = 12f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.WHITE)
+        }
+        gridPill.addView(gridIconIv, LinearLayout.LayoutParams(dp(15), dp(15)).apply { marginEnd = dp(6) })
+        gridPill.addView(gridLabelTv)
         fun syncGridPill() {
             val on = overlay.gridEnabled
+            gridLabelTv.text = overlay.gridModeLabel()
+            gridIconIv.setImageDrawable(StudioIcons.icon(this, StudioIcons.Type.GRID, 15, if (on) Color.parseColor("#38BDF8") else Color.parseColor("#CBD5E1")))
             gridPill.background = if (on) {
                 UiTheme.round(this, Color.parseColor("#3338BDF8"), 12, Color.parseColor("#38BDF8"))
             } else {
@@ -2336,7 +2632,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         UiTheme.bounce(gridPill) {
-            overlay.setGridEnabled(!overlay.gridEnabled)
+            overlay.cycleGridMode()
             syncGridPill()
         }
 
@@ -2355,9 +2651,21 @@ class MainActivity : ComponentActivity() {
         UiTheme.bounce(resetPosPill) {
             if (!overlay.isLocked) overlay.resetPosition()
         }
+        val camTimerTv = TextView(this).apply {
+            text = "00:00"
+            fontFeatureSettings = "tnum"
+            textSize = 11.5f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.parseColor("#A7F3D0"))
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#2210B981"), 11, Color.parseColor("#4410B981"))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        }
         quickRow.addView(gridPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(34)).apply { marginEnd = dp(8) })
         quickRow.addView(resetPosPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(34)))
+        quickRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        quickRow.addView(camTimerTv, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         bottomCard.addView(quickRow)
+        startSessionTimer(camTimerTv)
 
         topPill.addView(
             pillIconBtn(StudioIcons.Type.CLOSE, Color.WHITE, desc = L.t("back")) { _, _ ->
@@ -2610,17 +2918,18 @@ class MainActivity : ComponentActivity() {
         topPill.addView(
             pillIconBtn(StudioIcons.Type.GRID, Color.WHITE, desc = "Grid") { wrap, iv ->
                 if (isLightboxLocked) return@pillIconBtn
-                val next = !overlay.gridEnabled
-                overlay.setGridEnabled(next)
+                overlay.cycleGridMode()
+                val on = overlay.gridEnabled
                 iv.setImageDrawable(
                     StudioIcons.icon(
                         this,
                         StudioIcons.Type.GRID,
                         20,
-                        if (next) Color.parseColor("#38BDF8") else Color.WHITE
+                        if (on) Color.parseColor("#38BDF8") else Color.WHITE
                     )
                 )
-                wrap.background = if (next) UiTheme.round(this, Color.parseColor("#3338BDF8"), 14) else null
+                wrap.background = if (on) UiTheme.round(this, Color.parseColor("#3338BDF8"), 14) else null
+                Toast.makeText(this, overlay.gridModeLabel(), Toast.LENGTH_SHORT).show()
             },
             LinearLayout.LayoutParams(dp(44), dp(44))
         )
@@ -2684,8 +2993,19 @@ class MainActivity : ComponentActivity() {
                 if (!isLightboxLocked) overlay.resetPosition()
             }
         }
+        val lbTimerTv = TextView(this).apply {
+            text = "00:00"
+            fontFeatureSettings = "tnum"
+            textSize = 11f
+            UiTheme.applyDisplayFont(this, true)
+            setTextColor(Color.parseColor("#A7F3D0"))
+            background = UiTheme.round(this@MainActivity, Color.parseColor("#2210B981"), 10, Color.parseColor("#4410B981"))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        opRow.addView(lbTimerTv, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(6) })
         opRow.addView(resetPosChip)
         bottomCard.addView(opRow)
+        startSessionTimer(lbTimerTv)
         bottomCard.addView(UiTheme.styleProSeekBar(this, SeekBar(this).apply {
             max = 100; progress = opacityPercent
             setOnSeekBarChangeListener(simpleSeek { p ->
@@ -3044,6 +3364,9 @@ class MainActivity : ComponentActivity() {
             val name = "art_${System.currentTimeMillis()}.png"
             FileOutputStream(File(galleryDir, name)).use { outBmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
             prefs.edit().putString("gname_$name", "$prefix #${galleryDir.listFiles()?.size ?: 1}").apply()
+            if (::cloud.isInitialized && cloud.currentUser() != null) {
+                lifecycleScope.launch { cloud.recordDrawingSaved("$prefix ($name)") }
+            }
         } catch (_: Exception) {}
     }
 
@@ -3055,9 +3378,25 @@ class MainActivity : ComponentActivity() {
 
     private fun dp(v: Int): Int = UiTheme.dp(this, v)
 
+    override fun onResume() {
+        super.onResume()
+        if (::cloud.isInitialized && cloud.currentUser() != null) {
+            cloud.markPresenceAsync(lifecycleScope, true)
+        }
+    }
+
+    override fun onPause() {
+        if (::cloud.isInitialized && cloud.currentUser() != null) {
+            cloud.markPresenceAsync(lifecycleScope, false)
+        }
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        stopSessionTimer()
         handler.removeCallbacksAndMessages(null)
         activePopupDismiss = null
+        if (::cloud.isInitialized) cloud.stopAllListeners()
         super.onDestroy(); stopCamera(); destroyWebView(); billingAds.destroy()
         if (::analysisExecutor.isInitialized) analysisExecutor.shutdown()
         ioExecutor.shutdown()
