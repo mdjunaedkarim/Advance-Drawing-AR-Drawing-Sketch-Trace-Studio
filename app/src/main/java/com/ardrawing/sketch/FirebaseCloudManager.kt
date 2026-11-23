@@ -99,6 +99,10 @@ data class UserRecord(
     val bonusCoins: Long = 0L,
     val drawingsCount: Long = 0L,
     val sessionsCount: Long = 0L,
+    val adsWatchedCount: Long = 0L,
+    val purchasesCount: Long = 0L,
+    val totalSpentCents: Long = 0L,
+    val totalUsageSeconds: Long = 0L,
     val adminNote: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val lastActiveAt: Timestamp? = null,
@@ -147,7 +151,13 @@ class FirebaseCloudManager(
     )
 
     companion object {
-        const val PRIMARY_ADMIN_EMAIL = "junaedkarim263@gmail.com"
+        val ALLOWED_ADMIN_EMAILS = setOf(
+            "md.junaed.karim@gmail.com",
+            "mdjunaidkarim85@gmail.com",
+            "mdjunaidkarim26@gmail.com",
+            "junaedkarim20@gmail.com"
+        )
+        const val PRIMARY_ADMIN_EMAIL = "md.junaed.karim@gmail.com"
         const val APP_VERSION_NAME = "1.1.0"
         private const val TAG = "CloudStudio"
     }
@@ -179,7 +189,8 @@ class FirebaseCloudManager(
 
     fun isPrimaryAdmin(user: FirebaseUser? = auth.currentUser): Boolean {
         if (user == null) return false
-        return user.email.equals(PRIMARY_ADMIN_EMAIL, ignoreCase = true) && user.isEmailVerified
+        val email = user.email?.trim()?.lowercase(java.util.Locale.US) ?: return false
+        return user.isEmailVerified && email in ALLOWED_ADMIN_EMAILS
     }
 
     private fun deviceLabel(): String {
@@ -338,16 +349,8 @@ class FirebaseCloudManager(
     }
 
     private suspend fun resolveAdminRole(user: FirebaseUser): Boolean {
-        if (isPrimaryAdmin(user)) return true
-        val path = "admins/${user.uid}"
-        return try {
-            db.collection("admins").document(user.uid).get().await().exists()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.GET, path)
-            false
-        }
+        // Strictly restrict Admin Panel access ONLY to the 4 allowed verified Gmail accounts
+        return isPrimaryAdmin(user)
     }
 
     private fun startRealtimeListeners(
@@ -424,6 +427,10 @@ class FirebaseCloudManager(
                     "bonusCoins" to 0L,
                     "drawingsCount" to 0L,
                     "sessionsCount" to 1L,
+                    "adsWatchedCount" to 0L,
+                    "purchasesCount" to 0L,
+                    "totalSpentCents" to 0L,
+                    "totalUsageSeconds" to 0L,
                     "adminNote" to "",
                     "createdAt" to FieldValue.serverTimestamp(),
                     "lastActiveAt" to FieldValue.serverTimestamp(),
@@ -431,7 +438,7 @@ class FirebaseCloudManager(
                 )
                 docRef.set(createPayload).await()
             } else {
-                val updatePayload = mapOf(
+                val updatePayload = mutableMapOf<String, Any>(
                     "displayName" to safeName,
                     "email" to safeEmail,
                     "deviceModel" to device,
@@ -443,6 +450,10 @@ class FirebaseCloudManager(
                     "lastActiveAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
+                if (!snap.contains("adsWatchedCount")) updatePayload["adsWatchedCount"] = 0L
+                if (!snap.contains("purchasesCount")) updatePayload["purchasesCount"] = 0L
+                if (!snap.contains("totalSpentCents")) updatePayload["totalSpentCents"] = 0L
+                if (!snap.contains("totalUsageSeconds")) updatePayload["totalUsageSeconds"] = 0L
                 docRef.update(updatePayload).await()
             }
             Result.success(Unit)
@@ -522,6 +533,75 @@ class FirebaseCloudManager(
                 )
             ).await()
             logActivity("SAVE_DRAWING", detail.take(140))
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recordAdWatched(adType: String): Result<Unit> {
+        val uid = auth.currentUser?.uid
+        if (uid.isNullOrBlank()) return Result.success(Unit)
+        val path = "users/$uid"
+        return try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "adsWatchedCount" to FieldValue.increment(1L),
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            logActivity("AD_WATCHED", adType.take(140))
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recordPurchase(productId: String, title: String, amountCents: Long): Result<Unit> {
+        val uid = auth.currentUser?.uid
+        if (uid.isNullOrBlank()) return Result.success(Unit)
+        val safeCents = amountCents.coerceIn(0L, 10_000_000L)
+        val path = "users/$uid"
+        return try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "purchasesCount" to FieldValue.increment(1L),
+                    "totalSpentCents" to FieldValue.increment(safeCents),
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            val usd = String.format(java.util.Locale.US, "$%.2f", safeCents / 100.0)
+            logActivity("PURCHASE", "$title ($productId) • $usd".take(140))
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recordUsageSeconds(deltaSeconds: Long): Result<Unit> {
+        val uid = auth.currentUser?.uid
+        val safeSec = deltaSeconds.coerceIn(0L, 86_400L)
+        if (uid.isNullOrBlank() || safeSec <= 0L) return Result.success(Unit)
+        val path = "users/$uid"
+        return try {
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "totalUsageSeconds" to FieldValue.increment(safeSec),
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

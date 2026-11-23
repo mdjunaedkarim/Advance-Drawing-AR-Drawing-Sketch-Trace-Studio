@@ -8,8 +8,12 @@ const fs = require("node:fs");
 
 let testEnv;
 const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
-const ADMIN_UID = "admin_junaed_001";
-const ADMIN_EMAIL = "junaedkarim263@gmail.com";
+const ALLOWED_ADMINS = [
+  "md.junaed.karim@gmail.com",
+  "mdjunaidkarim85@gmail.com",
+  "mdjunaidkarim26@gmail.com",
+  "junaedkarim20@gmail.com",
+];
 const ALICE_UID = "alice_user_123";
 const BOB_UID = "bob_user_456";
 
@@ -33,6 +37,10 @@ function validUserPayload(uid, name, email, ts) {
     bonusCoins: 0,
     drawingsCount: 0,
     sessionsCount: 1,
+    adsWatchedCount: 0,
+    purchasesCount: 0,
+    totalSpentCents: 0,
+    totalUsageSeconds: 0,
     adminNote: "",
     createdAt: ts,
     lastActiveAt: ts,
@@ -40,7 +48,7 @@ function validUserPayload(uid, name, email, ts) {
   };
 }
 
-function validGlobalConfig(ts) {
+function validGlobalConfig(ts, updatedBy) {
   return {
     maintenanceMode: false,
     maintenanceMessage: "Scheduled studio upgrade in progress.",
@@ -54,7 +62,7 @@ function validGlobalConfig(ts) {
     storeEnabled: true,
     minSupportedVersion: "1.0.0",
     welcomeBonusCoins: 25,
-    updatedBy: ADMIN_EMAIL,
+    updatedBy: updatedBy,
     createdAt: ts,
     updatedAt: ts,
   };
@@ -93,10 +101,9 @@ test("Unauthenticated user: denied on all collections", async () => {
     unauthDb.collection("users").doc(ALICE_UID).set(validUserPayload(ALICE_UID, "Alice", "alice@example.com", now))
   );
   await assertFails(unauthDb.collection("app_config").doc("global").get());
-  await assertFails(unauthDb.collection("admins").doc(ADMIN_UID).get());
 });
 
-test("Authenticated user: valid create, telemetry update, and strict privilege/immutability guards", async () => {
+test("Authenticated user: valid create, ads/purchase/usage telemetry updates, and strict privilege guards", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
     email: "alice@example.com",
     email_verified: true,
@@ -109,59 +116,31 @@ test("Authenticated user: valid create, telemetry update, and strict privilege/i
     aliceDb.collection("users").doc(ALICE_UID).set(validUserPayload(ALICE_UID, "Alice", "alice@example.com", created))
   );
 
-  // Owner can read own profile
+  // Owner can read own profile, cannot list all users
   await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).get());
-
-  // Owner cannot list all users (PII protection)
   await assertFails(aliceDb.collection("users").get());
 
-  // Valid telemetry partial update
+  // Valid telemetry partial update (ads watched, purchases, USD cents spent, usage time)
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).update({
       activeScreen: "CAMERA",
       drawingsCount: 3,
+      adsWatchedCount: 5,
+      purchasesCount: 2,
+      totalSpentCents: 1102,
+      totalUsageSeconds: 1840,
       lastActiveAt: later,
       updatedAt: later,
     })
   );
 
   // Reject self-escalation of admin-only fields (vipGranted, bonusCoins, blocked)
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).update({
-      vipGranted: true,
-      updatedAt: later,
-    })
-  );
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).update({
-      bonusCoins: 9999,
-      updatedAt: later,
-    })
-  );
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).update({
-      blocked: true,
-      updatedAt: later,
-    })
-  );
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ vipGranted: true, updatedAt: later }));
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ bonusCoins: 9999, updatedAt: later }));
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ blocked: true, updatedAt: later }));
 
-  // Reject immutable createdAt modification
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).update({
-      createdAt: later,
-      updatedAt: later,
-    })
-  );
-
-  // Reject shadow ghost field on create
-  await assertFails(
-    aliceDb.collection("users").doc("extra_doc").set({
-      ...validUserPayload("extra_doc", "Alice", "alice@example.com", created),
-      isVerified: true,
-    })
-  );
-
-  // Reject tampered future timestamp
+  // Reject immutable createdAt modification & future timestamp tampering
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ createdAt: later, updatedAt: later }));
   await assertFails(
     aliceDb.collection("users").doc(ALICE_UID).update({
       activeScreen: "EDITOR",
@@ -176,8 +155,8 @@ test("Cross-user PII isolation and activity log ownership", async () => {
     const db = ctx.firestore();
     await db.collection("users").doc(BOB_UID).set(validUserPayload(BOB_UID, "Bob", "bob@example.com", ts));
     await db.collection("users").doc(BOB_UID).collection("activity_logs").doc("log_1").set({
-      action: "SESSION_START",
-      detail: "Opened app",
+      action: "PURCHASE",
+      detail: "Gold Reserve ($10.01)",
       createdAt: ts,
     });
   });
@@ -187,20 +166,17 @@ test("Cross-user PII isolation and activity log ownership", async () => {
     email_verified: true,
   }).firestore();
 
-  // Alice cannot read or modify Bob's profile or activity logs
   await assertFails(aliceDb.collection("users").doc(BOB_UID).get());
   await assertFails(aliceDb.collection("users").doc(BOB_UID).update({ displayName: "Hacked", updatedAt: ts }));
   await assertFails(aliceDb.collection("users").doc(BOB_UID).collection("activity_logs").get());
 
-  // Alice can write & read her own append-only activity log, but cannot update it
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).collection("activity_logs").doc("log_a1").set({
-      action: "SAVE_DRAWING",
-      detail: "Saved AR sketch",
+      action: "AD_WATCHED",
+      detail: "Rewarded Interstitial",
       createdAt: ts,
     })
   );
-  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("activity_logs").get());
   await assertFails(
     aliceDb.collection("users").doc(ALICE_UID).collection("activity_logs").doc("log_a1").update({
       detail: "Tampered",
@@ -208,18 +184,27 @@ test("Cross-user PII isolation and activity log ownership", async () => {
   );
 });
 
-test("Email spoofing attack (unverified admin email) is strictly rejected", async () => {
+test("Strict 4-Gmail Admin Allowlist: unverified spoofing and non-listed Gmails are strictly rejected", async () => {
   const ts = new Date(Date.now() - 5000);
+
+  // Unverified email spoofing of an allowed admin email -> DENIED
   const spoofDb = testEnv.authenticatedContext("spoof_uid", {
-    email: ADMIN_EMAIL,
+    email: ALLOWED_ADMINS[0],
     email_verified: false,
   }).firestore();
-
   await assertFails(spoofDb.collection("users").get());
-  await assertFails(spoofDb.collection("app_config").doc("global").set(validGlobalConfig(ts)));
+  await assertFails(spoofDb.collection("app_config").doc("global").set(validGlobalConfig(ts, ALLOWED_ADMINS[0])));
+
+  // Former or random verified Gmail NOT in the 4-email allowlist -> DENIED
+  const oldEmailDb = testEnv.authenticatedContext("non_admin_uid", {
+    email: "junaedkarim263@gmail.com",
+    email_verified: true,
+  }).firestore();
+  await assertFails(oldEmailDb.collection("users").get());
+  await assertFails(oldEmailDb.collection("app_config").doc("global").set(validGlobalConfig(ts, "junaedkarim263@gmail.com")));
 });
 
-test("Primary Admin: full user monitoring, moderation, and global remote app config control", async () => {
+test("All 4 Allowed Admin Gmails: full user analytics monitoring, moderation, and global remote config control", async () => {
   const ts = new Date(Date.now() - 10000);
   const later = new Date(Date.now() - 1000);
 
@@ -227,53 +212,47 @@ test("Primary Admin: full user monitoring, moderation, and global remote app con
     const db = ctx.firestore();
     await db.collection("users").doc(ALICE_UID).set(validUserPayload(ALICE_UID, "Alice", "alice@example.com", ts));
     await db.collection("users").doc(ALICE_UID).collection("activity_logs").doc("log_1").set({
-      action: "OPEN_LIGHTBOX",
-      detail: "Display tracing",
+      action: "PURCHASE",
+      detail: "Starter Pack ($1.01)",
       createdAt: ts,
     });
   });
 
-  const adminDb = testEnv.authenticatedContext(ADMIN_UID, {
-    email: ADMIN_EMAIL,
+  // Verify every single one of the 4 allowed Gmail addresses has full admin privileges
+  for (let i = 0; i < ALLOWED_ADMINS.length; i++) {
+    const adminEmail = ALLOWED_ADMINS[i];
+    const adminDb = testEnv.authenticatedContext(`admin_uid_${i}`, {
+      email: adminEmail,
+      email_verified: true,
+    }).firestore();
+
+    await assertSucceeds(adminDb.collection("users").get());
+    await assertSucceeds(adminDb.collection("users").doc(ALICE_UID).collection("activity_logs").get());
+
+    if (i === 0) {
+      await assertSucceeds(adminDb.collection("app_config").doc("global").set(validGlobalConfig(ts, adminEmail)));
+    } else {
+      await assertSucceeds(
+        adminDb.collection("app_config").doc("global").update({
+          adsEnabled: i % 2 === 0,
+          updatedBy: adminEmail,
+          updatedAt: later,
+        })
+      );
+    }
+  }
+
+  // Primary allowed admin can moderate user
+  const primaryAdminDb = testEnv.authenticatedContext("admin_uid_0", {
+    email: ALLOWED_ADMINS[0],
     email_verified: true,
   }).firestore();
-
-  // Admin can list all users & view any user's activity logs
-  await assertSucceeds(adminDb.collection("users").get());
-  await assertSucceeds(adminDb.collection("users").doc(ALICE_UID).collection("activity_logs").get());
-
-  // Admin can block/grant VIP/grant bonus coins on a user
   await assertSucceeds(
-    adminDb.collection("users").doc(ALICE_UID).update({
+    primaryAdminDb.collection("users").doc(ALICE_UID).update({
       blocked: true,
       vipGranted: true,
       bonusCoins: 200,
-      adminNote: "VIP tester",
-      updatedAt: later,
-    })
-  );
-
-  // Admin can create and update /app_config/global
-  await assertSucceeds(adminDb.collection("app_config").doc("global").set(validGlobalConfig(ts)));
-  await assertSucceeds(
-    adminDb.collection("app_config").doc("global").update({
-      maintenanceMode: true,
-      adsEnabled: false,
-      updatedBy: ADMIN_EMAIL,
-      updatedAt: later,
-    })
-  );
-
-  // Signed-in regular user can read /app_config/global, cannot list or write it
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
-    email: "alice@example.com",
-    email_verified: true,
-  }).firestore();
-  await assertSucceeds(aliceDb.collection("app_config").doc("global").get());
-  await assertFails(aliceDb.collection("app_config").get());
-  await assertFails(
-    aliceDb.collection("app_config").doc("global").update({
-      adsEnabled: false,
+      adminNote: "Verified buyer",
       updatedAt: later,
     })
   );

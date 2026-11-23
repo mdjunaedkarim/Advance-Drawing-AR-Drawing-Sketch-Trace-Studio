@@ -37,6 +37,7 @@ data class StorePack(
     val title: String,
     val coins: Int,
     val priceLabel: String,
+    val priceCents: Long = 0L,
     val isRemoveAds: Boolean = false
 )
 
@@ -51,7 +52,9 @@ data class AdFreePass(
 class BillingAdsManager(
     private val context: Context,
     private val onCoinsOrAdsChanged: () -> Unit,
-    private val onMessage: (String) -> Unit
+    private val onMessage: (String) -> Unit,
+    private val onAdWatched: (adType: String) -> Unit = {},
+    private val onPurchaseCompleted: (productId: String, title: String, amountCents: Long) -> Unit = { _, _, _ -> }
 ) : PurchasesUpdatedListener {
 
     companion object {
@@ -60,27 +63,27 @@ class BillingAdsManager(
         const val BANNER_AD_ID = "ca-app-pub-3832772126171491/2963720935"
 
         val PACKS = listOf(
-            StorePack("coins_10", "Pocket Change", 10, "$0.10"),
-            StorePack("coins_50", "Coin Pouch", 50, "$0.51"),
-            StorePack("coins_100", "Starter Pack", 100, "$1.01"),
-            StorePack("coins_200", "Bronze Vault", 200, "$2.01"),
-            StorePack("coins_300", "Artist Bundle", 300, "$3.01"),
-            StorePack("coins_400", "Sketch Chest", 400, "$4.01"),
-            StorePack("coins_500", "Silver Stash", 500, "$5.01"),
-            StorePack("coins_600", "Studio Supply", 600, "$6.01"),
-            StorePack("coins_700", "Canvas Reserve", 700, "$7.01"),
-            StorePack("coins_800", "Brush Cache", 800, "$8.01"),
-            StorePack("coins_900", "Palette Fortress", 900, "$9.01"),
-            StorePack("coins_1000", "Gold Reserve", 1000, "$10.01"),
-            StorePack("coins_1500", "Pro Vault", 1500, "$15.01"),
-            StorePack("coins_2000", "Master Treasury", 2000, "$20.01"),
-            StorePack("coins_2500", "Royal Safe", 2500, "$25.01"),
-            StorePack("coins_3000", "Diamond Box", 3000, "$30.01"),
-            StorePack("coins_4000", "Titan Coffer", 4000, "$40.01"),
-            StorePack("coins_5000", "Gallery Vault", 5000, "$50.20"),
-            StorePack("coins_7500", "Imperial Chest", 7500, "$74.99"),
-            StorePack("coins_10000", "Ultimate Horde", 10000, "$99.99"),
-            StorePack("remove_ads", "Permanent Ad-Free", 0, "$499.99", isRemoveAds = true)
+            StorePack("coins_10", "Pocket Change", 10, "$0.10", 10L),
+            StorePack("coins_50", "Coin Pouch", 50, "$0.51", 51L),
+            StorePack("coins_100", "Starter Pack", 100, "$1.01", 101L),
+            StorePack("coins_200", "Bronze Vault", 200, "$2.01", 201L),
+            StorePack("coins_300", "Artist Bundle", 300, "$3.01", 301L),
+            StorePack("coins_400", "Sketch Chest", 400, "$4.01", 401L),
+            StorePack("coins_500", "Silver Stash", 500, "$5.01", 501L),
+            StorePack("coins_600", "Studio Supply", 600, "$6.01", 601L),
+            StorePack("coins_700", "Canvas Reserve", 700, "$7.01", 701L),
+            StorePack("coins_800", "Brush Cache", 800, "$8.01", 801L),
+            StorePack("coins_900", "Palette Fortress", 900, "$9.01", 901L),
+            StorePack("coins_1000", "Gold Reserve", 1000, "$10.01", 1001L),
+            StorePack("coins_1500", "Pro Vault", 1500, "$15.01", 1501L),
+            StorePack("coins_2000", "Master Treasury", 2000, "$20.01", 2001L),
+            StorePack("coins_2500", "Royal Safe", 2500, "$25.01", 2501L),
+            StorePack("coins_3000", "Diamond Box", 3000, "$30.01", 3001L),
+            StorePack("coins_4000", "Titan Coffer", 4000, "$40.01", 4001L),
+            StorePack("coins_5000", "Gallery Vault", 5000, "$50.20", 5020L),
+            StorePack("coins_7500", "Imperial Chest", 7500, "$74.99", 7499L),
+            StorePack("coins_10000", "Ultimate Horde", 10000, "$99.99", 9999L),
+            StorePack("remove_ads", "Permanent Ad-Free", 0, "$499.99", 49999L, isRemoveAds = true)
         )
 
         val AD_FREE_PASSES = listOf(
@@ -213,6 +216,9 @@ class BillingAdsManager(
             pendingStartupShown = true
             pendingStartupCallback = null
             openAd.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdShowedFullScreenContent() {
+                    onAdWatched("App Open Ad")
+                }
                 override fun onAdDismissedFullScreenContent() {
                     appOpenAd = null; loadAppOpen(); onFinished()
                 }
@@ -242,6 +248,9 @@ class BillingAdsManager(
                     if (loaded != null && !activity.isFinishing && !activity.isDestroyed) {
                         pendingStartupShown = true
                         loaded.fullScreenContentCallback = object : FullScreenContentCallback() {
+                            override fun onAdShowedFullScreenContent() {
+                                onAdWatched("App Open Ad")
+                            }
                             override fun onAdDismissedFullScreenContent() {
                                 appOpenAd = null; loadAppOpen(); onFinished()
                             }
@@ -293,6 +302,9 @@ class BillingAdsManager(
             return
         }
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdShowedFullScreenContent() {
+                onAdWatched("Rewarded Interstitial")
+            }
             override fun onAdDismissedFullScreenContent() {
                 rewardedInterstitialAd = null; loadRewarded(); onFinished()
             }
@@ -316,6 +328,7 @@ class BillingAdsManager(
                 adUnitId = BANNER_AD_ID
                 adListener = object : com.google.android.gms.ads.AdListener() {
                     override fun onAdLoaded() { Log.d("AdMob", "Banner loaded") }
+                    override fun onAdImpression() { onAdWatched("Banner Ad") }
                     override fun onAdFailedToLoad(err: LoadAdError) {
                         Log.w("AdMob", "Banner failed: ${err.code} ${err.message}")
                     }
@@ -389,6 +402,15 @@ class BillingAdsManager(
         }
     }
 
+    private fun recordPurchaseOnce(purchase: Purchase, pack: StorePack) {
+        val tokenKey = "recorded_purchase_${purchase.purchaseToken.hashCode()}"
+        if (prefs.getBoolean(tokenKey, false)) return
+        prefs.edit().putBoolean(tokenKey, true).apply()
+        val pdMicros = productMap[pack.productId]?.oneTimePurchaseOfferDetails?.priceAmountMicros
+        val resolvedCents = if (pdMicros != null && pdMicros > 0L) (pdMicros / 10_000L) else pack.priceCents
+        onPurchaseCompleted(pack.productId, pack.title, resolvedCents.coerceAtLeast(0L))
+    }
+
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
         val client = billingClient ?: return
@@ -400,11 +422,13 @@ class BillingAdsManager(
             if (!purchase.isAcknowledged) {
                 client.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(purchase.purchaseToken).build()) {}
             }
+            recordPurchaseOnce(purchase, pack)
             onCoinsOrAdsChanged()
         } else {
             client.consumeAsync(ConsumeParams.newBuilder().setPurchaseToken(purchase.purchaseToken).build()) { br, _ ->
                 if (br.responseCode == BillingClient.BillingResponseCode.OK) {
                     coins += pack.coins
+                    recordPurchaseOnce(purchase, pack)
                     onCoinsOrAdsChanged()
                 }
             }

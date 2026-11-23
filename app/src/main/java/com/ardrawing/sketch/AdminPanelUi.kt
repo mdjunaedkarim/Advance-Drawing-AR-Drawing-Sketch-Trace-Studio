@@ -53,6 +53,24 @@ object AdminPanelUi {
         return SimpleDateFormat("dd MMM • HH:mm:ss", Locale.US).format(d)
     }
 
+    private fun formatDateShort(ts: Timestamp?): String {
+        if (ts == null) return "—"
+        return SimpleDateFormat("dd MMM yyyy", Locale.US).format(ts.toDate())
+    }
+
+    private fun formatUsd(cents: Long): String {
+        return String.format(Locale.US, "$%.2f", cents.coerceAtLeast(0L) / 100.0)
+    }
+
+    private fun formatDuration(totalSec: Long): String {
+        val s = totalSec.coerceAtLeast(0L)
+        return when {
+            s < 60L -> "${s}s"
+            s < 3600L -> "${s / 60L}m ${s % 60L}s"
+            else -> "${s / 3600L}h ${(s % 3600L) / 60L}m"
+        }
+    }
+
     // ---------------- GOOGLE SIGN-IN GATE SCREEN ----------------
     fun buildAuthGateView(
         act: Activity,
@@ -377,31 +395,34 @@ object AdminPanelUi {
         topRow.addView(liveBadge)
         main.addView(topRow)
 
-        // Live KPI Dashboard Strip (2x2 Grid)
+        // Live KPI Dashboard Strip (3x2 Analytics Grid)
         val kpiTotalVal = TextView(act)
         val kpiOnlineVal = TextView(act)
+        val kpiAdsVal = TextView(act)
+        val kpiRevVal = TextView(act)
+        val kpiUsageVal = TextView(act)
         val kpiDrawVal = TextView(act)
-        val kpiVipVal = TextView(act)
 
         fun kpiCard(valueTv: TextView, label: String, c1: String, c2: String): LinearLayout {
             return LinearLayout(act).apply {
                 orientation = LinearLayout.VERTICAL
-                background = UiTheme.premiumGrad(act, c1, c2, 18)
-                UiTheme.applyColoredShadow(this, Color.parseColor(c1), 6)
-                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = UiTheme.premiumGrad(act, c1, c2, 16)
+                UiTheme.applyColoredShadow(this, Color.parseColor(c1), 5)
+                setPadding(dp(12), dp(9), dp(12), dp(9))
                 valueTv.apply {
                     text = "0"
                     fontFeatureSettings = "tnum"
-                    textSize = 22f
+                    textSize = 18.5f
                     UiTheme.applyDisplayFont(this, true)
                     setTextColor(Color.WHITE)
+                    maxLines = 1
                 }
                 addView(valueTv)
                 addView(TextView(act).apply {
                     text = label
-                    textSize = 11.5f
+                    textSize = 11f
                     UiTheme.applyUiFont(this, true)
-                    setTextColor(Color.parseColor("#E0FFFFFF"))
+                    setTextColor(Color.parseColor("#E6FFFFFF"))
                     maxLines = 1
                 })
             }
@@ -416,18 +437,29 @@ object AdminPanelUi {
             kpiCard(kpiOnlineVal, L.t("admin_online_now"), "#10B981", "#059669"),
             LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         )
-        main.addView(kpiRow1, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        main.addView(kpiRow1, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(7) })
 
         val kpiRow2 = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
         kpiRow2.addView(
-            kpiCard(kpiDrawVal, L.t("admin_total_drawings"), "#0EA5E9", "#2563EB"),
+            kpiCard(kpiAdsVal, L.t("admin_total_ads"), "#F59E0B", "#D97706"),
             LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) }
         )
         kpiRow2.addView(
-            kpiCard(kpiVipVal, L.t("admin_vip_blocked"), "#EC4899", "#DB2777"),
+            kpiCard(kpiRevVal, L.t("admin_total_revenue"), "#EC4899", "#DB2777"),
             LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         )
-        main.addView(kpiRow2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        main.addView(kpiRow2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(7) })
+
+        val kpiRow3 = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        kpiRow3.addView(
+            kpiCard(kpiUsageVal, L.t("admin_total_usage"), "#0EA5E9", "#2563EB"),
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) }
+        )
+        kpiRow3.addView(
+            kpiCard(kpiDrawVal, L.t("admin_total_drawings"), "#6366F1", "#4338CA"),
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+        )
+        main.addView(kpiRow3, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
 
         // Segmented Switcher: Users Monitor vs Remote App Control
         var activeSection = AdminSection.USERS
@@ -638,6 +670,7 @@ object AdminPanelUi {
             filtered.forEachIndexed { idx, u ->
                 val uid = u.userId.ifBlank { u.id }
                 val isSelf = uid == selfUid
+                val isAdminRow = isSelf || u.email.trim().lowercase(Locale.US) in FirebaseCloudManager.ALLOWED_ADMIN_EMAILS
                 val (c1, c2) = UiTheme.seriesPalette(idx)
                 val initials = u.displayName.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "U" }
 
@@ -687,7 +720,7 @@ object AdminPanelUi {
                     maxLines = 1
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
 
-                if (isSelf) {
+                if (isAdminRow) {
                     nameRow.addView(TextView(act).apply {
                         text = "ADMIN"
                         textSize = 9.5f
@@ -719,40 +752,86 @@ object AdminPanelUi {
                 }
                 infoCol.addView(nameRow)
 
+                // Prominent Gmail Address Row
                 infoCol.addView(TextView(act).apply {
                     text = u.email.ifBlank { uid }
-                    textSize = 11.5f
-                    UiTheme.applyUiFont(this)
-                    setTextColor(UiTheme.textSub)
+                    textSize = 12f
+                    UiTheme.applyUiFont(this, true)
+                    setTextColor(UiTheme.accentBright)
                     maxLines = 1
                 })
                 infoCol.addView(TextView(act).apply {
-                    text = "${u.deviceModel} • v${u.appVersion} • ${u.language.uppercase(Locale.US)}"
-                    textSize = 11f
-                    UiTheme.applyUiFont(this, true)
-                    setTextColor(UiTheme.accentBright)
+                    text = "${u.deviceModel} • v${u.appVersion} • ${L.t("admin_joined")}: ${formatDateShort(u.createdAt)}"
+                    textSize = 10.5f
+                    UiTheme.applyUiFont(this)
+                    setTextColor(UiTheme.textSub)
                     maxLines = 1
                 })
                 header.addView(infoCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 card.addView(header)
 
-                // Telemetry Strip
+                // 4-Metric Analytics Strip (Ads, Purchases, Spent $, Usage Time)
+                val metricsRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                fun metricTile(value: String, label: String, accentHex: String): LinearLayout {
+                    return LinearLayout(act).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        background = UiTheme.round(act, UiTheme.surfaceAlt, 12, UiTheme.stroke)
+                        setPadding(dp(6), dp(7), dp(6), dp(7))
+                        addView(TextView(act).apply {
+                            text = value
+                            fontFeatureSettings = "tnum"
+                            textSize = 13f
+                            UiTheme.applyDisplayFont(this, true)
+                            setTextColor(Color.parseColor(accentHex))
+                            maxLines = 1
+                        })
+                        addView(TextView(act).apply {
+                            text = label
+                            textSize = 10f
+                            UiTheme.applyUiFont(this, true)
+                            setTextColor(UiTheme.textSub)
+                            maxLines = 1
+                        })
+                    }
+                }
+                metricsRow.addView(
+                    metricTile("${u.adsWatchedCount}", L.t("admin_stat_ads"), "#F59E0B"),
+                    LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(5) }
+                )
+                metricsRow.addView(
+                    metricTile("${u.purchasesCount}", L.t("admin_stat_buys"), "#8B5CF6"),
+                    LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(5) }
+                )
+                metricsRow.addView(
+                    metricTile(formatUsd(u.totalSpentCents), L.t("admin_stat_spent"), "#10B981"),
+                    LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.15f).apply { marginEnd = dp(5) }
+                )
+                metricsRow.addView(
+                    metricTile(formatDuration(u.totalUsageSeconds), L.t("admin_stat_time"), "#0EA5E9"),
+                    LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.15f)
+                )
+                card.addView(metricsRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                    topMargin = dp(9); bottomMargin = dp(7)
+                })
+
+                // Live Presence & Secondary Telemetry Strip
                 val statsRow = LinearLayout(act).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = UiTheme.round(act, UiTheme.surfaceAlt, 12)
-                    setPadding(dp(10), dp(7), dp(10), dp(7))
+                    background = UiTheme.round(act, UiTheme.surfaceAlt, 11)
+                    setPadding(dp(10), dp(6), dp(10), dp(6))
                 }
                 val statusText = if (u.online) "Online (${u.activeScreen})" else formatRelativeTime(u.lastActiveAt ?: u.updatedAt)
                 statsRow.addView(TextView(act).apply {
                     text = "$statusText  •  ${u.drawingsCount} art  •  ${u.sessionsCount} visits  •  +${u.bonusCoins} coins"
                     fontFeatureSettings = "tnum"
-                    textSize = 11f
+                    textSize = 10.5f
                     UiTheme.applyUiFont(this, true)
-                    setTextColor(UiTheme.textMain)
+                    setTextColor(UiTheme.textSub)
                 })
                 card.addView(statsRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                    topMargin = dp(9); bottomMargin = dp(10)
+                    bottomMargin = dp(9)
                 })
 
                 // Action Row
@@ -811,7 +890,7 @@ object AdminPanelUi {
                         if (u.blocked) L.t("admin_unblock") else L.t("admin_block"),
                         if (u.blocked) "#10B981" else "#EF4444",
                         if (u.blocked) "#059669" else "#DC2626",
-                        enabled = !isSelf
+                        enabled = !isAdminRow
                     ) {
                         scope.launch {
                             val r = cloud.adminUpdateUser(uid, !u.blocked, u.vipGranted, u.bonusCoins, u.adminNote)
@@ -1079,8 +1158,12 @@ object AdminPanelUi {
                     latestUsers = users
                     kpiTotalVal.text = users.size.toString()
                     kpiOnlineVal.text = users.count { it.online }.toString()
+                    kpiAdsVal.text = users.sumOf { it.adsWatchedCount }.toString()
+                    val totalCents = users.sumOf { it.totalSpentCents }
+                    val totalBuys = users.sumOf { it.purchasesCount }
+                    kpiRevVal.text = "${formatUsd(totalCents)} ($totalBuys)"
+                    kpiUsageVal.text = formatDuration(users.sumOf { it.totalUsageSeconds })
                     kpiDrawVal.text = users.sumOf { it.drawingsCount }.toString()
-                    kpiVipVal.text = "${users.count { it.vipGranted }} / ${users.count { it.blocked }}"
                     if (activeSection == AdminSection.USERS) rebuildUsersListOnly()
                 }
             },

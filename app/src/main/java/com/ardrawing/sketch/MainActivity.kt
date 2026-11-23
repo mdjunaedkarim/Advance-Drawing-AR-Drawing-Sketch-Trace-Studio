@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -101,6 +102,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var cloud: FirebaseCloudManager
     private var sessionTimerRunnable: Runnable? = null
     private var sessionSeconds = 0
+    private var usageWindowStartMs = 0L
+    private var usageFlushRunnable: Runnable? = null
     private val prefs by lazy { getSharedPreferences("ar_draw_prefs", MODE_PRIVATE) }
     private val galleryDir by lazy { File(filesDir, "gallery").apply { mkdirs() } }
 
@@ -182,7 +185,17 @@ class MainActivity : ComponentActivity() {
         billingAds = BillingAdsManager(
             context = this,
             onCoinsOrAdsChanged = { runOnUiThread { if (flow == Flow.MAIN) renderMain() } },
-            onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } }
+            onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } },
+            onAdWatched = { adType ->
+                if (::cloud.isInitialized && cloud.currentUser() != null) {
+                    lifecycleScope.launch { cloud.recordAdWatched(adType) }
+                }
+            },
+            onPurchaseCompleted = { productId, title, amountCents ->
+                if (::cloud.isInitialized && cloud.currentUser() != null) {
+                    lifecycleScope.launch { cloud.recordPurchase(productId, title, amountCents) }
+                }
+            }
         )
         try { billingAds.init() } catch (_: Throwable) {}
         cloud = FirebaseCloudManager(this)
@@ -415,13 +428,48 @@ class MainActivity : ComponentActivity() {
             )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                startUsageTracking()
                 if (shouldShowRestricted()) showFlow(Flow.RESTRICTED)
                 else showFlow(Flow.MAIN)
             }
         }
     }
 
+    private fun startUsageTracking() {
+        if (!::cloud.isInitialized || cloud.currentUser() == null) return
+        if (usageWindowStartMs == 0L) {
+            usageWindowStartMs = SystemClock.elapsedRealtime()
+        }
+        usageFlushRunnable?.let { handler.removeCallbacks(it) }
+        val r = object : Runnable {
+            override fun run() {
+                if (isFinishing || isDestroyed) return
+                flushUsageSeconds(resetStart = true)
+                handler.postDelayed(this, 60_000L)
+            }
+        }
+        usageFlushRunnable = r
+        handler.postDelayed(r, 60_000L)
+    }
+
+    private fun flushUsageSeconds(resetStart: Boolean) {
+        if (usageWindowStartMs <= 0L) return
+        val now = SystemClock.elapsedRealtime()
+        val deltaSec = ((now - usageWindowStartMs) / 1000L).coerceAtLeast(0L)
+        usageWindowStartMs = if (resetStart) now else 0L
+        if (deltaSec >= 2L && ::cloud.isInitialized && cloud.currentUser() != null) {
+            lifecycleScope.launch { cloud.recordUsageSeconds(deltaSec) }
+        }
+    }
+
+    private fun stopUsageTracking() {
+        usageFlushRunnable?.let { handler.removeCallbacks(it) }
+        usageFlushRunnable = null
+        flushUsageSeconds(resetStart = false)
+    }
+
     private fun handleSignOut() {
+        stopUsageTracking()
         cloud.signOut(lifecycleScope) {
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
@@ -3382,10 +3430,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::cloud.isInitialized && cloud.currentUser() != null) {
             cloud.markPresenceAsync(lifecycleScope, true)
+            startUsageTracking()
         }
     }
 
     override fun onPause() {
+        stopUsageTracking()
         if (::cloud.isInitialized && cloud.currentUser() != null) {
             cloud.markPresenceAsync(lifecycleScope, false)
         }
@@ -3393,6 +3443,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        stopUsageTracking()
         stopSessionTimer()
         handler.removeCallbacksAndMessages(null)
         activePopupDismiss = null

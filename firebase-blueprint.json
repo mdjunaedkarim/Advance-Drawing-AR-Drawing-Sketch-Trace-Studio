@@ -2,12 +2,12 @@
   "entities": {
     "UserRecord": {
       "title": "UserRecord",
-      "description": "Authenticated user profile, live presence telemetry, and admin moderation flags.",
+      "description": "Authenticated user profile, live presence, ad impressions, purchase revenue, app usage time, and admin moderation flags.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID matching document ID." },
         "displayName": { "type": "string", "description": "User display name." },
-        "email": { "type": "string", "description": "User Google email (PII, restricted to owner and admin)." },
+        "email": { "type": "string", "description": "User Google email (PII, restricted to owner and allowed admins)." },
         "deviceModel": { "type": "string", "description": "Android device manufacturer and model." },
         "appVersion": { "type": "string", "description": "Installed app version name." },
         "language": { "type": "string", "description": "Selected UI language code." },
@@ -18,8 +18,12 @@
         "bonusCoins": { "type": "integer", "description": "Admin-granted cumulative bonus coins." },
         "drawingsCount": { "type": "integer", "description": "Total drawings saved by the user." },
         "sessionsCount": { "type": "integer", "description": "Total app sessions opened by the user." },
+        "adsWatchedCount": { "type": "integer", "description": "Total ads watched by the user." },
+        "purchasesCount": { "type": "integer", "description": "Total completed in-app purchases by the user." },
+        "totalSpentCents": { "type": "integer", "description": "Total USD spent by the user in integer cents (e.g. 199 = $1.99)." },
+        "totalUsageSeconds": { "type": "integer", "description": "Total foreground time spent using the app in seconds." },
         "adminNote": { "type": "string", "description": "Optional note written by admin." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (FieldValue.serverTimestamp())." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on account creation (FieldValue.serverTimestamp())." },
         "lastActiveAt": { "type": "string", "format": "date-time", "description": "Server timestamp of latest user activity (FieldValue.serverTimestamp())." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of latest document update (FieldValue.serverTimestamp())." }
       },
@@ -37,6 +41,10 @@
         "bonusCoins",
         "drawingsCount",
         "sessionsCount",
+        "adsWatchedCount",
+        "purchasesCount",
+        "totalSpentCents",
+        "totalUsageSeconds",
         "adminNote",
         "createdAt",
         "lastActiveAt",
@@ -48,7 +56,7 @@
       "description": "Append-only user activity event stored under a user document.",
       "type": "object",
       "properties": {
-        "action": { "type": "string", "description": "Short action code such as SESSION_START or SAVE_DRAWING." },
+        "action": { "type": "string", "description": "Short action code such as SESSION_START, SAVE_DRAWING, AD_WATCHED, or PURCHASE." },
         "detail": { "type": "string", "description": "Human-readable context about the action." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of event (FieldValue.serverTimestamp())." }
       },
@@ -56,7 +64,7 @@
     },
     "AppConfig": {
       "title": "AppConfig",
-      "description": "Global remote configuration controlled by the app admin.",
+      "description": "Global remote configuration controlled exclusively by the allowed app admins.",
       "type": "object",
       "properties": {
         "maintenanceMode": { "type": "boolean", "description": "Locks app for non-admin users when true." },
@@ -92,23 +100,12 @@
         "createdAt",
         "updatedAt"
       ]
-    },
-    "AdminMember": {
-      "title": "AdminMember",
-      "description": "Delegated admin record stored by Firebase UID.",
-      "type": "object",
-      "properties": {
-        "email": { "type": "string", "description": "Admin Google email." },
-        "addedBy": { "type": "string", "description": "UID or email of the primary admin." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp when admin access was granted." }
-      },
-      "required": ["email", "addedBy", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserRecord" },
-      "description": "User profiles, live session presence, drawing counts, and admin moderation controls."
+      "description": "User profiles, live presence, ad impressions, purchases/USD spent, app usage duration, and admin moderation controls."
     },
     "/users/{userId}/activity_logs/{logId}": {
       "schema": { "$ref": "#/entities/UserActivityLog" },
@@ -117,10 +114,6 @@
     "/app_config/{configId}": {
       "schema": { "$ref": "#/entities/AppConfig" },
       "description": "Singleton remote app control configuration at /app_config/global."
-    },
-    "/admins/{adminUid}": {
-      "schema": { "$ref": "#/entities/AdminMember" },
-      "description": "Delegated administrator UIDs."
     }
   }
 }
