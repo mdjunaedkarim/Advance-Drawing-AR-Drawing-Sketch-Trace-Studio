@@ -93,51 +93,12 @@ object UiTabs {
         onBrowseOnline: (String) -> Unit,
         onOpenAnime: (AnimeCatalog.Series) -> Unit,
         onOpenCharacterGallery: (character: String, series: String) -> Unit,
-        onRefresh: () -> Unit,
-        announcement: Pair<String, String>? = null
+        onRefresh: () -> Unit
     ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
         val col = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(28))
-        }
-
-        // Live Admin Announcement Banner (when enabled remotely)
-        if (announcement != null && (announcement.first.isNotBlank() || announcement.second.isNotBlank())) {
-            val annCard = LinearLayout(act).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                background = UiTheme.premiumGrad(act, "#0EA5E9", "#4F46E5", 18, Color.parseColor("#44FFFFFF"))
-                UiTheme.applyColoredShadow(this, Color.parseColor("#4F46E5"), 6)
-                setPadding(dp(14), dp(11), dp(14), dp(11))
-            }
-            val bellWell = FrameLayout(act).apply {
-                background = UiTheme.round(act, Color.parseColor("#2EFFFFFF"), 12)
-                addView(
-                    StudioIcons.imageView(act, StudioIcons.Type.SPARK, 18, Color.WHITE),
-                    FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
-                )
-            }
-            annCard.addView(bellWell, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(11) })
-            val annTextCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-            if (announcement.first.isNotBlank()) {
-                annTextCol.addView(TextView(act).apply {
-                    text = announcement.first
-                    textSize = 13.5f
-                    UiTheme.applyDisplayFont(this, bold = true)
-                    setTextColor(Color.WHITE)
-                })
-            }
-            if (announcement.second.isNotBlank()) {
-                annTextCol.addView(TextView(act).apply {
-                    text = announcement.second
-                    textSize = 12f
-                    UiTheme.applyUiFont(this)
-                    setTextColor(Color.parseColor("#E0F2FE"))
-                })
-            }
-            annCard.addView(annTextCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            col.addView(annCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(10) })
         }
 
         // Studio Command Search Bar with Dynamic Focus Glow
@@ -1341,6 +1302,48 @@ object UiTabs {
             content.removeAllViews()
 
             if (storeCoinsTab) {
+                if (!billingAds.adsRemoved) {
+                    val watchAdCard = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = UiTheme.premiumGrad(act, "#7C3AED", "#EC4899", 20, Color.parseColor("#44FFFFFF"))
+                        UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 8)
+                        setPadding(dp(14), dp(13), dp(14), dp(13))
+                        val well = FrameLayout(act).apply {
+                            background = UiTheme.round(act, Color.parseColor("#2EFFFFFF"), 14)
+                            addView(
+                                StudioIcons.imageView(act, StudioIcons.Type.COIN, 24, Color.WHITE),
+                                FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
+                            )
+                        }
+                        addView(well, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
+                        val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+                        tc.addView(TextView(act).apply {
+                            text = L.t("watch_ad_title")
+                            textSize = 14.5f
+                            UiTheme.applyDisplayFont(this, bold = true)
+                            setTextColor(Color.WHITE)
+                        })
+                        tc.addView(TextView(act).apply {
+                            text = L.t("watch_ad_sub")
+                            textSize = 11.5f
+                            UiTheme.applyUiFont(this)
+                            setTextColor(Color.parseColor("#F5D0FE"))
+                        })
+                        addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+                        val playBtn = TextView(act).apply {
+                            text = L.t("watch_ad_btn")
+                            textSize = 12.5f
+                            UiTheme.applyDisplayFont(this, bold = true)
+                            setTextColor(Color.parseColor("#4C1D95"))
+                            background = UiTheme.round(act, Color.parseColor("#FDE047"), 12)
+                            setPadding(dp(14), dp(9), dp(14), dp(9))
+                        }
+                        addView(playBtn)
+                        UiTheme.bounce(this) { billingAds.showRewardedForCoins(act) }
+                    }
+                    content.addView(watchAdCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
+                }
                 content.addView(TextView(act).apply {
                     text = L.t("buy_coins_title")
                     textSize = 17f
@@ -1622,129 +1625,12 @@ object UiTabs {
         prefs: SharedPreferences,
         onOpenLanguagePage: () -> Unit,
         onOpenPrivacyPage: () -> Unit,
-        onRefresh: () -> Unit,
-        userEmail: String? = null,
-        userName: String? = null,
-        isAdmin: Boolean = false,
-        isVip: Boolean = false,
-        onOpenAdminPanel: (() -> Unit)? = null,
-        onSignOut: (() -> Unit)? = null
+        onRefresh: () -> Unit
     ): View {
         val dp = { v: Int -> UiTheme.dp(act, v) }
         val col = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(28))
-        }
-
-        // Signed-in Cloud Profile Card
-        if (!userEmail.isNullOrBlank()) {
-            val display = userName?.trim()?.takeIf { it.isNotEmpty() } ?: userEmail.substringBefore("@")
-            val initials = display.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "U" }
-            val profileCard = LinearLayout(act).apply {
-                orientation = LinearLayout.VERTICAL
-                background = UiTheme.premiumSurface(act, UiTheme.surface, 22, UiTheme.strokeStrong)
-                setPadding(dp(15), dp(14), dp(15), dp(14))
-                elevation = dp(4).toFloat()
-            }
-            val topProfile = LinearLayout(act).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            topProfile.addView(
-                UiTheme.monogramBadge(act, initials, "#7C3AED", "#EC4899", 46, 15, 15f),
-                LinearLayout.LayoutParams(dp(46), dp(46)).apply { marginEnd = dp(12) }
-            )
-            val pTextCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-            val pNameRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            pNameRow.addView(TextView(act).apply {
-                text = display
-                textSize = 15.5f
-                UiTheme.applyDisplayFont(this, bold = true)
-                setTextColor(UiTheme.textMain)
-                maxLines = 1
-            })
-            if (isAdmin) {
-                pNameRow.addView(TextView(act).apply {
-                    text = L.t("admin_badge")
-                    textSize = 9.5f
-                    UiTheme.applyDisplayFont(this, bold = true)
-                    setTextColor(Color.WHITE)
-                    background = UiTheme.premiumGrad(act, "#7C3AED", "#4F46E5", 7)
-                    setPadding(dp(6), dp(2), dp(6), dp(2))
-                }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(6) })
-            }
-            if (isVip) {
-                pNameRow.addView(TextView(act).apply {
-                    text = "VIP"
-                    textSize = 9.5f
-                    UiTheme.applyDisplayFont(this, bold = true)
-                    setTextColor(Color.parseColor("#1E1B4B"))
-                    background = UiTheme.premiumGrad(act, "#FDE047", "#F59E0B", 7)
-                    setPadding(dp(6), dp(2), dp(6), dp(2))
-                }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(5) })
-            }
-            pTextCol.addView(pNameRow)
-            pTextCol.addView(TextView(act).apply {
-                text = userEmail
-                textSize = 12f
-                UiTheme.applyUiFont(this)
-                setTextColor(UiTheme.textSub)
-                maxLines = 1
-            })
-            topProfile.addView(pTextCol, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            if (onSignOut != null) {
-                val signOutChip = TextView(act).apply {
-                    text = L.t("sign_out")
-                    textSize = 11.5f
-                    UiTheme.applyDisplayFont(this, bold = true)
-                    setTextColor(Color.parseColor("#EF4444"))
-                    background = UiTheme.round(act, Color.parseColor(if (UiTheme.isDark) "#2B1419" else "#FEE2E2"), 11, Color.parseColor("#FCA5A5"))
-                    setPadding(dp(10), dp(7), dp(10), dp(7))
-                    UiTheme.bounce(this) { onSignOut() }
-                }
-                topProfile.addView(signOutChip)
-            }
-            profileCard.addView(topProfile)
-            col.addView(profileCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
-        }
-
-        // Admin Control Panel Card (strictly visible to verified Admin only)
-        if (isAdmin && onOpenAdminPanel != null) {
-            val adminCard = LinearLayout(act).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                background = UiTheme.premiumGrad(act, "#312E81", "#7C3AED", 22, Color.parseColor("#55FFFFFF"))
-                UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 10)
-                setPadding(dp(16), dp(15), dp(16), dp(15))
-                val well = FrameLayout(act).apply {
-                    background = UiTheme.round(act, Color.parseColor("#2EFFFFFF"), 14, Color.parseColor("#44FFFFFF"))
-                    addView(
-                        StudioIcons.imageView(act, StudioIcons.Type.SHIELD_LOCK, 22, Color.WHITE),
-                        FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
-                    )
-                }
-                addView(well, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
-                val tc = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
-                tc.addView(TextView(act).apply {
-                    text = L.t("admin_panel")
-                    textSize = 15.5f
-                    UiTheme.applyDisplayFont(this, bold = true)
-                    setTextColor(Color.WHITE)
-                })
-                tc.addView(TextView(act).apply {
-                    text = L.t("admin_panel_sub")
-                    textSize = 11.5f
-                    UiTheme.applyUiFont(this)
-                    setTextColor(Color.parseColor("#DDD6FE"))
-                })
-                addView(tc, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-                addView(
-                    StudioIcons.imageView(act, StudioIcons.Type.ARROW_RIGHT, 18, Color.WHITE),
-                    LinearLayout.LayoutParams(dp(18), dp(18))
-                )
-                UiTheme.bounce(this) { onOpenAdminPanel() }
-            }
-            col.addView(adminCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) })
         }
 
         val themeCard = LinearLayout(act).apply {

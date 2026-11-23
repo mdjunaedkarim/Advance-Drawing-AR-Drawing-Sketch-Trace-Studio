@@ -23,7 +23,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -53,6 +52,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -69,8 +69,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import org.opencv.android.OpenCVLoader
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -88,7 +86,7 @@ import java.util.zip.ZipOutputStream
 class MainActivity : ComponentActivity() {
 
     private enum class Tab { HOME, GALLERY, STORE, SETTINGS }
-    private enum class Flow { SPLASH, AUTH, RESTRICTED, ADMIN, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, LIGHTBOX, CONGRATS }
+    private enum class Flow { SPLASH, MAIN, LANG, PRIVACY, ANIME_CHARS, CHAR_GALLERY, BROWSER, EDITOR, CAMERA, LIGHTBOX, CONGRATS }
 
     private var flow = Flow.SPLASH
     private var currentTab = Tab.HOME
@@ -99,11 +97,8 @@ class MainActivity : ComponentActivity() {
     private val tracker by lazy { PlaneTracker() }
 
     private lateinit var billingAds: BillingAdsManager
-    private lateinit var cloud: FirebaseCloudManager
     private var sessionTimerRunnable: Runnable? = null
     private var sessionSeconds = 0
-    private var usageWindowStartMs = 0L
-    private var usageFlushRunnable: Runnable? = null
     private val prefs by lazy { getSharedPreferences("ar_draw_prefs", MODE_PRIVATE) }
     private val galleryDir by lazy { File(filesDir, "gallery").apply { mkdirs() } }
 
@@ -158,7 +153,7 @@ class MainActivity : ComponentActivity() {
         } catch (_: Throwable) {}
     }
 
-    private val pickGalleryLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    private val pickGalleryLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) handlePickedUri(uri) else openLightboxAfterPick = false
     }
     private val pickAnyFileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -174,6 +169,10 @@ class MainActivity : ComponentActivity() {
         else showFlow(Flow.CAMERA)
     }
 
+    private fun launchPhotoPicker() {
+        pickGalleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -185,20 +184,9 @@ class MainActivity : ComponentActivity() {
         billingAds = BillingAdsManager(
             context = this,
             onCoinsOrAdsChanged = { runOnUiThread { if (flow == Flow.MAIN) renderMain() } },
-            onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } },
-            onAdWatched = { adType ->
-                if (::cloud.isInitialized && cloud.currentUser() != null) {
-                    lifecycleScope.launch { cloud.recordAdWatched(adType) }
-                }
-            },
-            onPurchaseCompleted = { productId, title, amountCents ->
-                if (::cloud.isInitialized && cloud.currentUser() != null) {
-                    lifecycleScope.launch { cloud.recordPurchase(productId, title, amountCents) }
-                }
-            }
+            onMessage = { msg -> runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } }
         )
         try { billingAds.init() } catch (_: Throwable) {}
-        cloud = FirebaseCloudManager(this)
 
         root = FrameLayout(this).apply { setBackgroundColor(UiTheme.bg) }
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -219,8 +207,6 @@ class MainActivity : ComponentActivity() {
                 }
                 when (flow) {
                     Flow.SPLASH -> {}
-                    Flow.AUTH, Flow.RESTRICTED -> finish()
-                    Flow.ADMIN -> { cloud.stopAdminUsersListener(); showFlow(Flow.MAIN) }
                     Flow.CAMERA -> { stopCamera(); showFlow(Flow.EDITOR) }
                     Flow.LIGHTBOX -> {
                         if (!isLightboxLocked) {
@@ -356,128 +342,12 @@ class MainActivity : ComponentActivity() {
                     if (isFinishing || isDestroyed || flow != Flow.SPLASH) return@postDelayed
                     billingAds.showStartupAd(this@MainActivity) {
                         runOnUiThread {
-                            if (!isFinishing && !isDestroyed) proceedAfterSplash()
+                            if (!isFinishing && !isDestroyed) showFlow(Flow.MAIN)
                         }
                     }
                 }, 140)
             }
         }, 45)
-    }
-
-    private fun proceedAfterSplash() {
-        if (isFinishing || isDestroyed) return
-        cloud.attemptAutoSignIn(
-            activity = this,
-            scope = lifecycleScope,
-            onAuthSuccess = {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) onAuthenticatedReady()
-                }
-            },
-            onUnauthenticated = {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) showFlow(Flow.AUTH)
-                }
-            }
-        )
-    }
-
-    private fun shouldShowRestricted(): Boolean {
-        if (cloud.isAdminUser) return false
-        return cloud.currentUserRecord?.blocked == true || cloud.globalConfig.maintenanceMode
-    }
-
-    private fun onAuthenticatedReady() {
-        cloud.resolveAdminSynchronously()
-        startUsageTracking()
-        if (shouldShowRestricted()) showFlow(Flow.RESTRICTED)
-        else showFlow(Flow.MAIN)
-
-        lifecycleScope.launch {
-            cloud.initializeAuthenticatedSession(
-                languageCode = L.lang,
-                onConfigUpdated = { cfg ->
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        billingAds.applyRemoteAdsEnabled(cfg.adsEnabled)
-                        if (shouldShowRestricted()) {
-                            if (flow != Flow.RESTRICTED) showFlow(Flow.RESTRICTED)
-                            else renderRestrictedGate()
-                        } else if (flow == Flow.RESTRICTED) {
-                            showFlow(Flow.MAIN)
-                        } else if (flow == Flow.MAIN) {
-                            if (!cfg.storeEnabled && !cloud.isAdminUser && currentTab == Tab.STORE) {
-                                currentTab = Tab.HOME
-                            }
-                            renderMain()
-                        }
-                    }
-                },
-                onSelfUserUpdated = { rec ->
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        billingAds.syncCloudRewards(rec.vipGranted, rec.bonusCoins)
-                        if (shouldShowRestricted()) {
-                            if (flow != Flow.RESTRICTED) showFlow(Flow.RESTRICTED)
-                            else renderRestrictedGate()
-                        } else if (flow == Flow.RESTRICTED) {
-                            showFlow(Flow.MAIN)
-                        }
-                    }
-                },
-                onAdminStatusResolved = { _ ->
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed && flow == Flow.MAIN) renderMain()
-                    }
-                }
-            )
-        }
-    }
-
-    private fun startUsageTracking() {
-        if (!::cloud.isInitialized || cloud.currentUser() == null) return
-        if (usageWindowStartMs == 0L) {
-            usageWindowStartMs = SystemClock.elapsedRealtime()
-        }
-        usageFlushRunnable?.let { handler.removeCallbacks(it) }
-        val r = object : Runnable {
-            override fun run() {
-                if (isFinishing || isDestroyed) return
-                flushUsageSeconds(resetStart = true)
-                handler.postDelayed(this, 60_000L)
-            }
-        }
-        usageFlushRunnable = r
-        handler.postDelayed(r, 60_000L)
-    }
-
-    private fun flushUsageSeconds(resetStart: Boolean) {
-        if (usageWindowStartMs <= 0L) return
-        val now = SystemClock.elapsedRealtime()
-        val deltaSec = ((now - usageWindowStartMs) / 1000L).coerceAtLeast(0L)
-        usageWindowStartMs = if (resetStart) now else 0L
-        if (deltaSec >= 2L && ::cloud.isInitialized && cloud.currentUser() != null) {
-            lifecycleScope.launch { cloud.recordUsageSeconds(deltaSec) }
-        }
-    }
-
-    private fun stopUsageTracking() {
-        usageFlushRunnable?.let { handler.removeCallbacks(it) }
-        usageFlushRunnable = null
-        flushUsageSeconds(resetStart = false)
-    }
-
-    private fun handleSignOut() {
-        stopUsageTracking()
-        cloud.signOut(lifecycleScope) {
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    billingAds.syncCloudRewards(false, 0L)
-                    billingAds.applyRemoteAdsEnabled(true)
-                    showFlow(Flow.AUTH)
-                }
-            }
-        }
     }
 
     private fun stopSessionTimer() {
@@ -503,21 +373,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showFlow(target: Flow) {
-        if (!cloud.isAdminUser && target != Flow.AUTH && target != Flow.RESTRICTED && target != Flow.SPLASH) {
-            val cfg = cloud.globalConfig
-            if (target == Flow.CAMERA && !cfg.arCameraEnabled) {
-                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
-                return
-            }
-            if (target == Flow.LIGHTBOX && !cfg.lightboxEnabled) {
-                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
-                return
-            }
-            if (target == Flow.BROWSER && !cfg.bingSearchEnabled) {
-                Toast.makeText(this, L.t("feature_disabled_admin"), Toast.LENGTH_LONG).show()
-                return
-            }
-        }
         applyInsetsCallback = null
         if (flow == Flow.CAMERA && target != Flow.CAMERA) stopCamera()
         if (flow == Flow.LIGHTBOX && target != Flow.LIGHTBOX) {
@@ -527,16 +382,9 @@ class MainActivity : ComponentActivity() {
         if ((flow == Flow.CAMERA || flow == Flow.LIGHTBOX) && target != Flow.CAMERA && target != Flow.LIGHTBOX) {
             stopSessionTimer()
         }
-        if (flow == Flow.ADMIN && target != Flow.ADMIN) cloud.stopAdminUsersListener()
         if (flow == Flow.BROWSER && target != Flow.BROWSER) destroyWebView()
         flow = target
-        if (target != Flow.SPLASH && target != Flow.AUTH && cloud.currentUser() != null) {
-            lifecycleScope.launch { cloud.updateActiveScreen(target.name, L.lang) }
-        }
         when (target) {
-            Flow.AUTH -> renderAuthGate()
-            Flow.RESTRICTED -> renderRestrictedGate()
-            Flow.ADMIN -> renderAdminPanel()
             Flow.MAIN -> renderMain()
             Flow.LANG -> renderLanguagePage()
             Flow.PRIVACY -> renderPrivacyPage()
@@ -549,76 +397,6 @@ class MainActivity : ComponentActivity() {
             Flow.CONGRATS -> renderCongrats()
             Flow.SPLASH -> showSplash()
         }
-    }
-
-    private fun renderAuthGate() {
-        applyInsetsCallback = null
-        updateSystemBarsAppearance(!UiTheme.isDark)
-        root.removeAllViews()
-        val view = AdminPanelUi.buildAuthGateView(
-            act = this,
-            safeTopPx = safeTop(),
-            safeBottomPx = safeBottom(),
-            cloud = cloud,
-            scope = lifecycleScope,
-            onSignedIn = { onAuthenticatedReady() }
-        )
-        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        applyInsetsCallback = {
-            view.setPadding(dp(22), safeTop() + dp(20), dp(22), safeBottom() + dp(20))
-        }
-        ViewCompat.requestApplyInsets(root)
-    }
-
-    private fun renderRestrictedGate() {
-        applyInsetsCallback = null
-        updateSystemBarsAppearance(!UiTheme.isDark)
-        root.removeAllViews()
-        val isBlocked = cloud.currentUserRecord?.blocked == true
-        val title = if (isBlocked) L.t("blocked_title") else L.t("maintenance_title")
-        val msg = if (isBlocked) {
-            L.t("blocked_message")
-        } else {
-            cloud.globalConfig.maintenanceMessage.ifBlank { L.t("maintenance_title") }
-        }
-        val view = AdminPanelUi.buildRestrictedGateView(
-            act = this,
-            safeTopPx = safeTop(),
-            safeBottomPx = safeBottom(),
-            isBlocked = isBlocked,
-            title = title,
-            message = msg,
-            email = cloud.currentUser()?.email ?: "",
-            onSignOut = { handleSignOut() }
-        )
-        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        applyInsetsCallback = {
-            view.setPadding(dp(24), safeTop() + dp(20), dp(24), safeBottom() + dp(20))
-        }
-        ViewCompat.requestApplyInsets(root)
-    }
-
-    private fun renderAdminPanel() {
-        if (!cloud.isAdminUser) {
-            showFlow(Flow.MAIN)
-            return
-        }
-        applyInsetsCallback = null
-        updateSystemBarsAppearance(!UiTheme.isDark)
-        root.removeAllViews()
-        val view = AdminPanelUi.buildAdminPanel(
-            act = this,
-            safeTopPx = safeTop(),
-            safeBottomPx = safeBottom(),
-            cloud = cloud,
-            scope = lifecycleScope,
-            onBack = { showFlow(Flow.MAIN) }
-        )
-        root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        applyInsetsCallback = {
-            view.setPadding(dp(16), safeTop() + dp(10), dp(16), safeBottom() + dp(10))
-        }
-        ViewCompat.requestApplyInsets(root)
     }
 
     private fun openDirectBingForCharacter(character: String, series: String, returnFlow: Flow) {
@@ -694,24 +472,6 @@ class MainActivity : ComponentActivity() {
         }
         topBar.addView(titleStack, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
 
-        if (cloud.isAdminUser) {
-            val adminPill = StudioIcons.iconPill(
-                context = this,
-                iconType = StudioIcons.Type.SHIELD_LOCK,
-                label = L.t("admin_badge"),
-                textColor = Color.WHITE,
-                iconColor = Color.WHITE,
-                iconSizeDp = 12,
-                textSizeSp = 10f
-            ).apply {
-                background = UiTheme.premiumGrad(this@MainActivity, "#312E81", "#7C3AED", 12)
-                UiTheme.applyColoredShadow(this, Color.parseColor("#7C3AED"), 5)
-                setPadding(dp(9), dp(4), dp(9), dp(4))
-                UiTheme.bounce(this) { showFlow(Flow.ADMIN) }
-            }
-            topBar.addView(adminPill, LinearLayout.LayoutParams(WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) })
-        }
-
         if (billingAds.adsRemoved) {
             val shieldPill = StudioIcons.iconPill(
                 context = this,
@@ -750,22 +510,19 @@ class MainActivity : ComponentActivity() {
         mainCol.addView(topBar)
         mainCol.addView(View(this).apply { setBackgroundColor(UiTheme.stroke) }, LinearLayout.LayoutParams(MATCH_PARENT, dp(1)))
 
-        val cfg = cloud.globalConfig
-        val liveAnnouncement = if (cfg.announcementEnabled) cfg.announcementTitle to cfg.announcementText else null
         val body = when (currentTab) {
             Tab.HOME -> UiTabs.buildHome(
                 this,
                 { showCuteSourcePopup() },
                 { openCamCapture() },
-                { importToGalleryMode = false; openLightboxAfterPick = false; pickGalleryLauncher.launch("image/*") },
+                { importToGalleryMode = false; openLightboxAfterPick = false; launchPhotoPicker() },
                 { currentTab = Tab.GALLERY; renderMain() },
-                { importToGalleryMode = false; openLightboxAfterPick = true; pickGalleryLauncher.launch("image/*") },
+                { importToGalleryMode = false; openLightboxAfterPick = true; launchPhotoPicker() },
                 { openEditorWithBitmap(it) },
                 { q -> browserQuery = q; browserReturnFlow = Flow.MAIN; showFlow(Flow.BROWSER) },
                 { series -> selectedSeries = series; showFlow(Flow.ANIME_CHARS) },
                 { ch, series -> openDirectBingForCharacter(ch, series, Flow.MAIN) },
-                { renderMain() },
-                announcement = liveAnnouncement
+                { renderMain() }
             )
             Tab.GALLERY -> UiTabs.buildGallery(this, galleryDir, prefs, { showCuteImportPopup() }, { exportZipFiles(it) }, { openEditorWithBitmap(it) }, { renderMain() })
             Tab.STORE -> UiTabs.buildStore(this, billingAds)
@@ -774,13 +531,7 @@ class MainActivity : ComponentActivity() {
                 prefs = prefs,
                 onOpenLanguagePage = { showFlow(Flow.LANG) },
                 onOpenPrivacyPage = { showFlow(Flow.PRIVACY) },
-                onRefresh = { renderMain() },
-                userEmail = cloud.currentUser()?.email,
-                userName = cloud.currentUser()?.displayName,
-                isAdmin = cloud.isAdminUser,
-                isVip = billingAds.permanentAdsRemoved,
-                onOpenAdminPanel = if (cloud.isAdminUser) ({ showFlow(Flow.ADMIN) }) else null,
-                onSignOut = { handleSignOut() }
+                onRefresh = { renderMain() }
             )
         }
         UiTheme.animatePageIn(body, 12, 220L)
@@ -799,14 +550,12 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(8), dp(7), dp(8), dp(7))
             elevation = dp(14).toFloat()
         }
-        val navTabs = buildList {
-            add(Triple(Tab.HOME, StudioIcons.Type.HOME, L.t("home")))
-            add(Triple(Tab.GALLERY, StudioIcons.Type.GALLERY, L.t("my_gallery")))
-            if (cfg.storeEnabled || cloud.isAdminUser) {
-                add(Triple(Tab.STORE, StudioIcons.Type.STORE, L.t("store")))
-            }
-            add(Triple(Tab.SETTINGS, StudioIcons.Type.SETTINGS, L.t("settings")))
-        }
+        val navTabs = listOf(
+            Triple(Tab.HOME, StudioIcons.Type.HOME, L.t("home")),
+            Triple(Tab.GALLERY, StudioIcons.Type.GALLERY, L.t("my_gallery")),
+            Triple(Tab.STORE, StudioIcons.Type.STORE, L.t("store")),
+            Triple(Tab.SETTINGS, StudioIcons.Type.SETTINGS, L.t("settings"))
+        )
         navTabs.forEach { (tab, icon, label) ->
             val sel = currentTab == tab
             nav.addView(LinearLayout(this).apply {
@@ -1706,7 +1455,7 @@ class MainActivity : ComponentActivity() {
             UiTheme.bounce(this) { dismiss(onTap) }
         }
         row.addView(optBtn(StudioIcons.Type.CAMERA, L.t("take_photo"), "#8B5CF6", "#6D28D9") { openCamCapture() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(12) })
-        row.addView(optBtn(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; openLightboxAfterPick = false; pickGalleryLauncher.launch("image/*") }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        row.addView(optBtn(StudioIcons.Type.PHOTO, L.t("upload_gallery"), "#EC4899", "#DB2777") { importToGalleryMode = false; openLightboxAfterPick = false; launchPhotoPicker() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         card.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) })
         card.addView(
             UiTheme.studioSoftAction(
@@ -2588,7 +2337,7 @@ class MainActivity : ComponentActivity() {
             if (originalBitmap == null) {
                 importToGalleryMode = false
                 openLightboxAfterPick = true
-                pickGalleryLauncher.launch("image/*")
+                launchPhotoPicker()
             } else {
                 if (brightnessPercent < 100) brightnessPercent = 140
                 showFlow(Flow.LIGHTBOX)
@@ -3411,9 +3160,6 @@ class MainActivity : ComponentActivity() {
             val name = "art_${System.currentTimeMillis()}.png"
             FileOutputStream(File(galleryDir, name)).use { outBmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
             prefs.edit().putString("gname_$name", "$prefix #${galleryDir.listFiles()?.size ?: 1}").apply()
-            if (::cloud.isInitialized && cloud.currentUser() != null) {
-                lifecycleScope.launch { cloud.recordDrawingSaved("$prefix ($name)") }
-            }
         } catch (_: Exception) {}
     }
 
@@ -3427,26 +3173,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::cloud.isInitialized && cloud.currentUser() != null) {
-            cloud.markPresenceAsync(lifecycleScope, true)
-            startUsageTracking()
+        if (::billingAds.isInitialized) {
+            billingAds.resumeBanner()
+            if (flow == Flow.MAIN) {
+                billingAds.showAppOpenOnResume(this)
+            }
         }
     }
 
     override fun onPause() {
-        stopUsageTracking()
-        if (::cloud.isInitialized && cloud.currentUser() != null) {
-            cloud.markPresenceAsync(lifecycleScope, false)
+        if (::billingAds.isInitialized) {
+            billingAds.pauseBanner()
         }
         super.onPause()
     }
 
     override fun onDestroy() {
-        stopUsageTracking()
         stopSessionTimer()
         handler.removeCallbacksAndMessages(null)
         activePopupDismiss = null
-        if (::cloud.isInitialized) cloud.stopAllListeners()
         super.onDestroy(); stopCamera(); destroyWebView(); billingAds.destroy()
         if (::analysisExecutor.isInitialized) analysisExecutor.shutdown()
         ioExecutor.shutdown()
