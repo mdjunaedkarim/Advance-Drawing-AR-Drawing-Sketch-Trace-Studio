@@ -388,6 +388,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onAuthenticatedReady() {
+        cloud.resolveAdminSynchronously()
+        startUsageTracking()
+        if (shouldShowRestricted()) showFlow(Flow.RESTRICTED)
+        else showFlow(Flow.MAIN)
+
         lifecycleScope.launch {
             cloud.initializeAuthenticatedSession(
                 languageCode = L.lang,
@@ -426,12 +431,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             )
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                startUsageTracking()
-                if (shouldShowRestricted()) showFlow(Flow.RESTRICTED)
-                else showFlow(Flow.MAIN)
-            }
         }
     }
 

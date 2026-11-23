@@ -193,6 +193,12 @@ class FirebaseCloudManager(
         return user.isEmailVerified && email in ALLOWED_ADMIN_EMAILS
     }
 
+    fun resolveAdminSynchronously(): Boolean {
+        val admin = isPrimaryAdmin(auth.currentUser)
+        isAdminUser = admin
+        return admin
+    }
+
     private fun deviceLabel(): String {
         val m = (Build.MANUFACTURER ?: "").trim()
         val model = (Build.MODEL ?: "").trim()
@@ -252,9 +258,13 @@ class FirebaseCloudManager(
         onAuthCancelled: () -> Unit = {}
     ) {
         val clientId = try {
-            appContext.getString(R.string.default_web_client_id)
+            appContext.getString(R.string.default_web_client_id).trim()
         } catch (_: Exception) {
-            onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+            onAuthError(L.t("auth_missing_config"))
+            return
+        }
+        if (clientId.isEmpty() || clientId.startsWith("ci-placeholder")) {
+            onAuthError(L.t("auth_missing_config"))
             return
         }
         val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
@@ -278,7 +288,13 @@ class FirebaseCloudManager(
                 onAuthCancelled()
             } catch (e: Exception) {
                 Log.e("Auth", "Google Sign-In failed", e)
-                onAuthError(e.localizedMessage ?: "Google Sign-In failed")
+                val raw = e.localizedMessage ?: e.message ?: "Google Sign-In failed"
+                val looksLikeConfigOrSha = raw.contains("28444") ||
+                    raw.contains("Developer console", ignoreCase = true) ||
+                    raw.contains("NoCredential", ignoreCase = true) ||
+                    raw.contains("16:", ignoreCase = true) ||
+                    raw.contains("10:", ignoreCase = true)
+                onAuthError(if (looksLikeConfigOrSha) "${L.t("auth_sha_hint")}\n($raw)" else raw)
             }
         }
     }
