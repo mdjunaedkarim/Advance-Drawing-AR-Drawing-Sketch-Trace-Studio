@@ -4,7 +4,7 @@ object L {
     var lang = "en"
 
     // এখানে আপনার ওয়েবসাইটের Privacy Policy লিংকটি বসবে (লিংক দিলে অটো ওয়েবসাইটে নিয়ে যাবে)
-    const val PRIVACY_URL = "https://sites.google.com/view/advance-drawing-studio-/home"
+    const val PRIVACY_URL = "https://sites.google.com/view/advance-drawing-ar-sketch/home"
 
     data class LangInfo(
         val code: String,
