@@ -56,9 +56,9 @@ class BillingAdsManager(
 ) : PurchasesUpdatedListener {
 
     companion object {
-        const val APP_OPEN_AD_ID = "ca-app-pub-3832772126171491/3986972658"
-        const val REWARDED_INTERSTITIAL_AD_ID = "ca-app-pub-3832772126171491/4202595074"
-        const val BANNER_AD_ID = "ca-app-pub-3832772126171491/2963720935"
+        const val APP_OPEN_AD_ID = "ca-app-pub-3832772126171491/6927651138"
+        const val REWARDED_INTERSTITIAL_AD_ID = "ca-app-pub-3832772126171491/7909560314"
+        const val BANNER_AD_ID = "ca-app-pub-3832772126171491/3106544360"
 
         private const val APP_OPEN_EXPIRY_MS = 4L * 60L * 60L * 1000L
         private const val APP_OPEN_RESUME_COOLDOWN_MS = 90_000L

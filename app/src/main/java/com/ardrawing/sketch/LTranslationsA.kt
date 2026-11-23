@@ -134,7 +134,7 @@ internal object LTranslationsA {
         "camera_denied" to "Camera permission is required",
         "camera_error" to "Could not start camera",
         "image_failed" to "Could not open image",
-        "share_text" to "Draw anything onto paper with Advance Drawing Studio! https://play.google.com/store/apps/details?id=com.advancedrawing.studio"
+        "share_text" to "Draw anything onto paper with Advance Drawing Studio! https://play.google.com/store/apps/details?id=com.advancedrawing.com"
     )
 
     val bn = mapOf(
@@ -269,7 +269,7 @@ internal object LTranslationsA {
         "camera_denied" to "ক্যামেরার অনুমতি প্রয়োজন",
         "camera_error" to "ক্যামেরা চালু করা যায়নি",
         "image_failed" to "ছবিটি খোলা যায়নি",
-        "share_text" to "Advance Drawing Studio দিয়ে কাগজে সহজেই যেকোনো ছবি আঁকুন! https://play.google.com/store/apps/details?id=com.advancedrawing.studio"
+        "share_text" to "Advance Drawing Studio দিয়ে কাগজে সহজেই যেকোনো ছবি আঁকুন! https://play.google.com/store/apps/details?id=com.advancedrawing.com"
     )
 
     val hi = mapOf(

@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.advancedrawing.studio"
+        applicationId = "com.advancedrawing.com"
         minSdk = 28
         targetSdk = 35
         versionCode = 3

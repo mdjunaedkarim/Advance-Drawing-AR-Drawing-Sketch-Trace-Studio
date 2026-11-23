@@ -30,7 +30,7 @@ object PrivacyPolicyContent {
             Section(
                 StudioIcons.Type.SHIELD_LOCK,
                 "১. সংক্ষিপ্ত বিবরণ ও কোনো অ্যাকাউন্ট ছাড়াই ব্যবহার",
-                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio) ব্যবহারকারীর গোপনীয়তাকে সর্বোচ্চ গুরুত্ব দেয়। কোনো অ্যাকাউন্ট বা লগইন ছাড়াই আপনি সরাসরি অ্যাপটি ব্যবহার করতে পারবেন। আমরা আপনার নাম, ইমেইল, ফোন নম্বর বা আঁকা ছবি আমাদের কোনো সার্ভারে সংগ্রহ বা সংরক্ষণ করি না।"
+                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.com) ব্যবহারকারীর গোপনীয়তাকে সর্বোচ্চ গুরুত্ব দেয়। কোনো অ্যাকাউন্ট বা লগইন ছাড়াই আপনি সরাসরি অ্যাপটি ব্যবহার করতে পারবেন। আমরা আপনার নাম, ইমেইল, ফোন নম্বর বা আঁকা ছবি আমাদের কোনো সার্ভারে সংগ্রহ বা সংরক্ষণ করি না।"
             ),
             Section(
                 StudioIcons.Type.CREATE_PEN,
@@ -68,7 +68,7 @@ object PrivacyPolicyContent {
             Section(
                 StudioIcons.Type.SHIELD_LOCK,
                 "1. Overview & No Account Required",
-                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio) respects your privacy. You can use the entire app directly without creating an account or signing in. We do not operate developer servers that collect or store your name, email, phone number, or drawings."
+                "Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.com) respects your privacy. You can use the entire app directly without creating an account or signing in. We do not operate developer servers that collect or store your name, email, phone number, or drawings."
             ),
             Section(
                 StudioIcons.Type.CREATE_PEN,
@@ -105,9 +105,9 @@ object PrivacyPolicyContent {
 
     fun buildPlainText(isBn: Boolean): String {
         val header = if (isBn) {
-            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio)\nকার্যকর তারিখ: $EFFECTIVE_DATE\n\n"
+            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.com)\nকার্যকর তারিখ: $EFFECTIVE_DATE\n\n"
         } else {
-            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.studio)\nEffective Date: $EFFECTIVE_DATE\n\n"
+            "Privacy Policy — Advance Drawing : AR Sketch & Trace Studio (com.advancedrawing.com)\nEffective Date: $EFFECTIVE_DATE\n\n"
         }
         return header + sections(isBn).joinToString("\n\n") { "${it.title}\n${it.body}" }
     }
@@ -180,7 +180,7 @@ object PrivacyPolicyContent {
             setTextColor(Color.WHITE)
         })
         heroTextCol.addView(TextView(act).apply {
-            text = "com.advancedrawing.studio • $EFFECTIVE_DATE"
+            text = "com.advancedrawing.com • $EFFECTIVE_DATE"
             textSize = 12f
             setTextColor(Color.parseColor("#DDD6FE"))
             setPadding(0, dp(3), 0, 0)
