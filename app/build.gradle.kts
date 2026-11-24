@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.ardrawing.sketch"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.advancedrawing.com"
         minSdk = 28
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 3
         versionName = "1.2.0"
 
