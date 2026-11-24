@@ -492,7 +492,7 @@ class BillingAdsManager(
         val params = QueryProductDetailsParams.newBuilder().setProductList(products).build()
         client.queryProductDetailsAsync(params) { _, list ->
             productMap.clear()
-            list.forEach { productMap[it.productId] = it }
+            list?.forEach { productMap[it.productId] = it }
         }
     }
 
