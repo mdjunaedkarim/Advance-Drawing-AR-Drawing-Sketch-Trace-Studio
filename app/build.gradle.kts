@@ -62,5 +62,5 @@ dependencies {
     implementation("org.opencv:opencv:4.9.0")
     implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta5")
     implementation("com.google.android.gms:play-services-ads:23.3.0")
-    implementation("com.android.billingclient:billing-ktx:7.0.0")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 }
